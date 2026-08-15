@@ -65,10 +65,9 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
       <main className="flex-1 p-8">
         <Outlet />{" "}
-        {/* This renders the specific page (Appointments, Doctors, etc.) */}
+
       </main>
     </div>
   );

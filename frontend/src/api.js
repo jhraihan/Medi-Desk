@@ -4,7 +4,7 @@ const API = axios.create({
   baseURL: "http://127.0.0.1:8000/",
 });
 
-// Attach JWT access token to every outgoing request
+
 API.interceptors.request.use((config) => {
   const token = localStorage.getItem("access_token");
   if (token) {
@@ -13,7 +13,7 @@ API.interceptors.request.use((config) => {
   return config;
 });
 
-// Authentication
+
 export async function login(username, password) {
   const response = await API.post("login/", { username, password });
   return response.data;
@@ -24,7 +24,7 @@ export async function register(userData) {
   return response.data;
 }
 
-// Helper factory for standard CRUD endpoints
+
 function createCrudApi(resourcePath) {
   return {
     list: async (params) => {

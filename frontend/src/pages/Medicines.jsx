@@ -77,7 +77,6 @@ export default function Medicines() {
       <Alert>{error}</Alert>
       <Alert variant="success">{notice}</Alert>
 
-      {/* Search Bar */}
       <div className="relative mb-6 max-w-md">
         <Search className="absolute top-2.5 left-3 text-slate-400" size={16} />
         <input

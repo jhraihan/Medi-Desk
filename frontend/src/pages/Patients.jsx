@@ -45,8 +45,7 @@ export default function Patients() {
     load();
   }, [reloadCount]);
 
-  // Note: In a full app, you'd also need a user creation step here or
-  // expect the backend to handle the User <-> Patient relationship creation.
+
   async function handleSave(e) {
     e.preventDefault();
     setIsSaving(true);

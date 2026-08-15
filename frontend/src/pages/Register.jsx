@@ -9,7 +9,7 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [role, setRole] = useState("patient"); // Default role
+  const [role, setRole] = useState("patient"); 
 
   const [error, setError] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
@@ -21,7 +21,7 @@ export default function Register() {
     setIsRegistering(true);
 
     try {
-      // Send the data matching our Django UserSerializer
+
       await register({
         username,
         email,
@@ -31,13 +31,13 @@ export default function Register() {
         role,
       });
 
-      // If successful, send them to the login page so they can sign in
+
       navigate("/login", { replace: true });
     } catch (problem) {
-      // Extract validation errors from Django if they exist
+
       const errorData = problem.response?.data;
       if (typeof errorData === "object") {
-        // Grab the first error message from the object (e.g., "That username is already taken.")
+
         const firstKey = Object.keys(errorData)[0];
         setError(`${firstKey}: ${errorData[firstKey]}`);
       } else {

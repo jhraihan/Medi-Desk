@@ -158,7 +158,6 @@ export default function Prescriptions() {
             onChange={(e) => setNotes(e.target.value)}
           />
 
-          {/* Dynamic Medicines Section */}
           <div className="mt-6 rounded-md border border-slate-200 p-4">
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase text-slate-600">
