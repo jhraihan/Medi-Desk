@@ -8,23 +8,34 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ['id', 'username', 'email', 'password', 'first_name', 'last_name', 'role']
-        extra_kwargs = {'password': {'write_only': True}}
+        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'role']
+        read_only_fields = fields
+
+
+class RegisterSerializer(serializers.ModelSerializer):
+    """Signup always creates a patient. Staff are added through the Django admin."""
+
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'password', 'first_name', 'last_name']
+        extra_kwargs = {
+            'password': {'write_only': True},
+            'email': {'required': True},
+        }
 
     def validate_password(self, value):
         validate_password(value)
         return value
 
     def create(self, validated_data):
-        user = User.objects.create_user(
+        return User.objects.create_user(
             username=validated_data['username'],
             email=validated_data.get('email', ''),
             password=validated_data['password'],
             first_name=validated_data.get('first_name', ''),
             last_name=validated_data.get('last_name', ''),
-            role=validated_data.get('role', 'patient')
+            role=User.Role.PATIENT,
         )
-        return user
 
 class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:

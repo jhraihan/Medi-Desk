@@ -3,7 +3,7 @@ from rest_framework import viewsets, generics
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from django.contrib.auth import get_user_model
 from .models import User, Department, Doctor, Patient, Appointment, Prescription, Medicine, PrescriptionMedicine,Bill
-from .serializers import BillSerializer, MedicineSerializer, PrescriptionSerializer, UserSerializer, DepartmentSerializer, DoctorSerializer, PatientSerializer, AppointmentSerializer
+from .serializers import BillSerializer, MedicineSerializer, PrescriptionSerializer, RegisterSerializer, UserSerializer, DepartmentSerializer, DoctorSerializer, PatientSerializer, AppointmentSerializer
 from .permissions import AdminOrReceptionistWrites, DoctorWrites, AppointmentWrites
 from django_filters.rest_framework import DjangoFilterBackend
 
@@ -12,10 +12,12 @@ from django_filters.rest_framework import DjangoFilterBackend
 User = get_user_model()
 
 class RegisterView(generics.CreateAPIView):
+    """Public self-registration. Always creates a patient — see RegisterSerializer."""
 
     queryset = User.objects.all()
-    serializer_class = UserSerializer
+    serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
+    throttle_scope = 'register'
 
 class DepartmentViewSet(viewsets.ModelViewSet):
     queryset = Department.objects.all()

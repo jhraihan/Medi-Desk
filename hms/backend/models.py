@@ -1,17 +1,28 @@
-from tkinter.tix import STATUS
-
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 
-# Create your models here.
+
 class User(AbstractUser):
-    ROLE_CHOICES = [
-        ('admin', 'Admin'),
-        ('doctor', 'Doctor'),
-        ('patient', 'Patient'),
-        ('receptionist', 'Receptionist'),
-    ]
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    class Role(models.TextChoices):
+        ADMIN = 'admin', 'Admin'
+        DOCTOR = 'doctor', 'Doctor'
+        PATIENT = 'patient', 'Patient'
+        RECEPTIONIST = 'receptionist', 'Receptionist'
+        PHARMACIST = 'pharmacist', 'Pharmacist'
+
+    # Kept for backwards compatibility with existing references.
+    ROLE_CHOICES = Role.choices
+
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.PATIENT,
+    )
+
+    def __str__(self):
+        full_name = self.get_full_name()
+        label = full_name or self.username
+        return f'{label} ({self.get_role_display()})'
 
 class Department(models.Model):
     name = models.CharField(max_length=255)

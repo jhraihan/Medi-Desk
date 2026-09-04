@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { register } from "../api.js";
-import { Alert, Button, Input, Select } from "../components/index.js";
+import { Alert, Button, Input } from "../components/index.js";
 
 export default function Register() {
   const [username, setUsername] = useState("");
@@ -9,7 +9,6 @@ export default function Register() {
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [role, setRole] = useState("patient"); 
 
   const [error, setError] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
@@ -28,7 +27,6 @@ export default function Register() {
         password,
         first_name: firstName,
         last_name: lastName,
-        role,
       });
 
 
@@ -97,18 +95,6 @@ export default function Register() {
             value={password}
             onChange={(event) => setPassword(event.target.value)}
           />
-
-          <Select
-            label="Role"
-            required
-            value={role}
-            onChange={(event) => setRole(event.target.value)}
-          >
-            <option value="patient">Patient</option>
-            <option value="doctor">Doctor</option>
-            <option value="receptionist">Receptionist</option>
-            <option value="admin">Admin</option>
-          </Select>
 
           <Button
             type="submit"

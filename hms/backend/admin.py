@@ -1,14 +1,23 @@
 from django.contrib import admin
-from .models import User, Department, Doctor, Patient, Appointment, Prescription, Medicine, PrescriptionMedicine
+from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-# Register your models here.
+from .models import User, Department, Doctor, Patient, Appointment, Prescription, Medicine, PrescriptionMedicine, Bill
+
 
 @admin.register(User)
-class UserAdmin(admin.ModelAdmin):
+class UserAdmin(DjangoUserAdmin):
+    """Subclasses the auth UserAdmin so passwords stay hashed. This is where staff accounts get made."""
+
     list_display = ('username', 'email', 'first_name', 'last_name', 'role', 'is_staff', 'is_active')
     list_filter = ('role', 'is_staff', 'is_active')
     search_fields = ('username', 'email', 'first_name', 'last_name')
-    list_editable = ('role', 'is_staff', 'is_active')
+
+    fieldsets = DjangoUserAdmin.fieldsets + (
+        ('Hospital role', {'fields': ('role',)}),
+    )
+    add_fieldsets = DjangoUserAdmin.add_fieldsets + (
+        ('Hospital role', {'fields': ('role',)}),
+    )
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
@@ -42,3 +51,9 @@ class MedicineAdmin(admin.ModelAdmin):
 @admin.register(PrescriptionMedicine)
 class PrescriptionMedicineAdmin(admin.ModelAdmin):
     list_display = ('prescription', 'medicine', 'dosage', 'duration')
+
+@admin.register(Bill)
+class BillAdmin(admin.ModelAdmin):
+    list_display = ('id', 'patient', 'amount', 'paid', 'created_at')
+    list_filter = ('paid', 'created_at')
+    search_fields = ('patient__user__username',)
