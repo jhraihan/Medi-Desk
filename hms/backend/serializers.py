@@ -1,13 +1,22 @@
-from rest_framework import serializers
-from .models import (
-    Appointment, Bill, BillItem, Department, Doctor, Medicine, Patient,
-    Notification, Payment, Prescription, PrescriptionMedicine, User,
-)
-from django.utils import timezone
-from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
+from rest_framework import serializers
 
-User = get_user_model()
+from .models import (
+    Appointment,
+    Bill,
+    BillItem,
+    Department,
+    Doctor,
+    Medicine,
+    Notification,
+    Patient,
+    Payment,
+    Prescription,
+    PrescriptionMedicine,
+    User,
+)
+
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:

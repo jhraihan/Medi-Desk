@@ -1,14 +1,24 @@
 from datetime import date, time, timedelta
+from decimal import Decimal
 
 from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from decimal import Decimal
-
 from .models import (
-    Appointment, AuditLog, Bill, Doctor, DoctorSchedule, Medicine, MedicineStock,
-    Notification, Patient, Payment, Prescription, PrescriptionMedicine, User,
+    Appointment,
+    AuditLog,
+    Bill,
+    Doctor,
+    DoctorSchedule,
+    Medicine,
+    MedicineStock,
+    Notification,
+    Patient,
+    Payment,
+    Prescription,
+    PrescriptionMedicine,
+    User,
 )
 
 
@@ -331,7 +341,8 @@ class DispensingTests(ScopingTests):
         self.client.force_authenticate(self.pharmacist)
         self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
 
-        soon.refresh_from_db(); later.refresh_from_db()
+        soon.refresh_from_db()
+        later.refresh_from_db()
         self.assertEqual(soon.quantity, 0)
         self.assertEqual(later.quantity, 9)
 

@@ -14,16 +14,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Appointment, Bill, Department, Doctor, Medicine, Notification, Patient, Prescription
-from .services import DispenseError, available_slots, dashboard_for, dispense_prescription
 from .permissions import (
     AppointmentAccess,
     BillAccess,
+    CanDispense,
     DepartmentAccess,
     DoctorAccess,
     MedicineAccess,
     PatientAccess,
     PrescriptionAccess,
-    CanDispense,
     role_of,
 )
 from .serializers import (
@@ -39,6 +38,7 @@ from .serializers import (
     RegisterSerializer,
     UserSerializer,
 )
+from .services import DispenseError, available_slots, dashboard_for, dispense_prescription
 
 User = get_user_model()
 
@@ -228,8 +228,11 @@ class NotificationViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin,
                           viewsets.GenericViewSet):
     serializer_class = NotificationSerializer
     permission_classes = [IsAuthenticated]
+    queryset = Notification.objects.none()
 
     def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Notification.objects.none()
         return Notification.objects.filter(recipient=self.request.user)
 
     @extend_schema(request=None, responses=dict)

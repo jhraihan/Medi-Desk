@@ -1,0 +1,662 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Hospital Management System — PRD v2.0</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.8pt;
+    line-height: 1.62;
+    color: #22272f;
+    margin: 0;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  h1, h2, h3, h4 { color: #10243f; line-height: 1.3; margin: 0; }
+  h2 {
+    font-size: 17pt; margin: 30px 0 4px; letter-spacing: -.3px;
+    page-break-after: avoid;
+  }
+  h2 .num { color: #17847a; font-weight: 700; margin-right: 8px; }
+  h2 + .lede { color: #5d6b7f; margin: 0 0 16px; font-size: 10.4pt; }
+  h3 {
+    font-size: 12.4pt; margin: 22px 0 8px; color: #12655e;
+    page-break-after: avoid;
+  }
+  h4 { font-size: 11pt; margin: 16px 0 5px; page-break-after: avoid; }
+
+  p { margin: 0 0 11px; }
+  ul, ol { margin: 0 0 12px; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  strong { color: #10243f; }
+
+  code {
+    font-family: "Courier New", monospace;
+    font-size: 9.4pt; background: #eef3f8; padding: 1px 5px;
+    border-radius: 3px; color: #0a4f6b;
+  }
+  pre.code {
+    font-family: "Courier New", monospace;
+    font-size: 9pt; line-height: 1.5; background: #12263c; color: #e7eef7;
+    border-radius: 6px; padding: 12px 14px; margin: 10px 0 14px;
+    white-space: pre-wrap; page-break-inside: avoid;
+  }
+  pre.code .c { color: #8fa8c4; }
+  pre.code .g { color: #7ee0c4; }
+  pre.code .r { color: #ff9d9d; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 9.8pt; }
+  th {
+    background: #10243f; color: #fff; text-align: left;
+    padding: 9px 10px; font-weight: 600; font-size: 9.4pt;
+  }
+  td { padding: 9px 10px; border-bottom: 1px solid #dfe6ef; vertical-align: top; line-height: 1.5; }
+  tr { page-break-inside: avoid; }
+  tbody tr:nth-child(even) { background: #f7f9fc; }
+
+  .tag {
+    display: inline-block; padding: 2px 9px; border-radius: 11px;
+    font-size: 8.4pt; font-weight: 700; color: #fff; white-space: nowrap;
+  }
+  .t-crit { background: #b3123c; } .t-high { background: #c9590a; }
+  .t-med { background: #a97c04; }  .t-low { background: #55677a; }
+  .t-new { background: #e6f4f1; color: #12655e; border: 1px solid #9dcfc8; }
+
+  /* Cover */
+  .cover { padding: 8mm 0 14mm; border-bottom: 3px solid #17847a; margin-bottom: 6mm; }
+  .cover .kick {
+    font-size: 9.4pt; letter-spacing: 2.6px; text-transform: uppercase;
+    color: #17847a; font-weight: 700;
+  }
+  .cover h1 { font-size: 30pt; margin: 10px 0 4px; letter-spacing: -1px; }
+  .cover .sub { font-size: 13.4pt; color: #5d6b7f; font-weight: 300; }
+  .cover dl {
+    display: grid; grid-template-columns: auto 1fr; gap: 4px 16px;
+    margin: 22px 0 0; font-size: 10pt;
+  }
+  .cover dt { color: #6b7a90; font-weight: 600; }
+  .cover dd { margin: 0; }
+
+  .box {
+    border-left: 4px solid #17847a; background: #f2f8f8;
+    padding: 12px 16px; margin: 14px 0 18px; page-break-inside: avoid;
+  }
+  .box.red { border-left-color: #b3123c; background: #fdf4f6; }
+  .box > :last-child { margin-bottom: 0; }
+  .box h4 { margin-top: 0; }
+
+  .finding {
+    border: 1px solid #dbe3ed; border-left: 4px solid #b3123c; border-radius: 5px;
+    padding: 13px 16px; margin: 0 0 14px; page-break-inside: avoid; background: #fff;
+  }
+  .finding .hd { font-size: 11.4pt; font-weight: 700; color: #10243f; margin-bottom: 2px; }
+  .finding .loc {
+    font-family: "Courier New", monospace; font-size: 8.8pt;
+    color: #6b7a90; margin-bottom: 8px;
+  }
+  .finding p { margin-bottom: 8px; }
+  .finding .fix { font-size: 10.2pt; }
+  .finding .fix b { color: #12655e; }
+
+  .brk { page-break-before: always; }
+  .foot {
+    margin-top: 30px; padding-top: 10px; border-top: 1px solid #dfe6ef;
+    font-size: 9pt; color: #8a97a8; text-align: center;
+  }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 26px; }
+  .chk { list-style: none; padding-left: 0; }
+  .chk li { padding-left: 24px; position: relative; }
+  .chk li::before {
+    content: ""; position: absolute; left: 0; top: 4px;
+    width: 12px; height: 12px; border: 1.6px solid #9aa9bb; border-radius: 3px;
+  }
+
+  /* --- Medical identity: shared with .vscode/markdown-light.css --- */
+  .brandbar { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
+  .brandmark {
+    width: 40px; height: 40px; flex: 0 0 40px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect x="1.5" y="1.5" width="37" height="37" rx="9" fill="none" stroke="%230d7a72" stroke-width="2.4"/><path d="M16 8h8v8h8v8h-8v8h-8v-8H8v-8h8z" fill="%230d7a72" opacity="0.13"/><path d="M6 20h5.4l2.3-5.6 3.4 10.2 3.1-8 2.4 5.1 2.2-2.6H34" fill="none" stroke="%230d7a72" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-repeat: no-repeat; background-size: 40px 40px;
+  }
+  .brandtext {
+    font-size: 12.6pt; font-weight: 700; color: #0d7a72;
+    letter-spacing: 2.2px; text-transform: uppercase;
+  }
+  h2 { position: relative; border-bottom: 0 !important; padding-bottom: 9px; }
+  h2::after {
+    content: ""; position: absolute; left: 0; bottom: 0;
+    width: 54px; height: 3px; background: #0d7a72; border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="brandbar"><span class="brandmark"></span><span class="brandtext">Hospital Management System</span></div>
+  <div class="kick">Product Requirements Document</div>
+  <h1>Hospital Management System</h1>
+  <div class="sub">v2.0 — from working prototype to production-ready</div>
+  <dl>
+    <dt>Prepared for</dt><dd>jhraihan — this is your build plan</dd>
+    <dt>Date</dt><dd>4 September 2026</dd>
+    <dt>Reviewed at</dt><dd>commit <code>12b2062</code>, branch <code>main</code></dd>
+    <dt>Stack</dt><dd>Django 6.1 · DRF 3.18 · SimpleJWT 5.5 · React 19 · Vite 8 · Tailwind 4</dd>
+    <dt>Effort</dt><dd>≈ 8–11 weeks solo, in 7 phases</dd>
+  </dl>
+</div>
+
+<h2><span class="num">1</span>What this is</h2>
+<p>
+You asked me to review the project, find what's wrong, and say what would make it
+industry standard. I read every backend file and the frontend core and verified each
+finding against the code rather than assuming it. This document is the result: what's
+broken, what to build, and the order to do it in.
+</p>
+<p>
+Start with the good news. Your domain model is sensible — the entities and their
+relationships are the right ones. The code is clean and readable. You separated
+<code>models</code>, <code>serializers</code>, <code>permissions</code> and
+<code>views</code> the way DRF intends. The React app is tidy and consistently
+structured. As a demonstration that you can build CRUD over DRF, it works.
+</p>
+<p>
+The gap is that a hospital system is not a CRUD app. It holds the most sensitive
+category of personal data there is, and the current code has no meaningful defence
+around it. I found <strong>40 issues: 6 critical, 10 high, 16 medium, 8 low</strong>.
+</p>
+
+<div class="box red">
+  <h4>The three that matter most</h4>
+  <p>
+    <strong>1. Anyone can make themselves an admin.</strong> Your public registration
+    endpoint accepts a <code>role</code> field from the client. Post
+    <code>{"role": "admin"}</code> to it and you are an administrator. Your React
+    registration form has a role dropdown, so this is offered to users directly.
+  </p>
+  <p>
+    <strong>2. Every authenticated user can read every record.</strong> Your permissions
+    check roles on writes but allow all reads. Any patient who signs up can list every
+    other patient's address, phone, blood group, diagnoses, prescriptions and bills.
+  </p>
+  <p>
+    <strong>3. Your filters do nothing.</strong> <code>DjangoFilterBackend</code> is
+    imported but never connected. Every filter the UI sends is silently discarded and
+    the full table comes back, so the screen looks filtered when it isn't.
+  </p>
+</div>
+
+<p>
+None of these are hard to fix. They are all a few lines each. But until they are fixed,
+this application must not be pointed at real patient data.
+</p>
+
+<h2 class="brk"><span class="num">2</span>Critical — fix these first</h2>
+<p class="lede">Six issues. Roughly two to three days of work. Nothing else should start before these are done.</p>
+
+<div class="finding">
+  <div class="hd"><span class="tag t-crit">CRITICAL</span> &nbsp;C-1 · Anyone can register as an admin</div>
+  <div class="loc">hms/backend/serializers.py:11 · hms/backend/views.py RegisterView</div>
+  <p>
+    <code>role</code> is writable on <code>UserSerializer</code> and
+    <code>RegisterView</code> is <code>AllowAny</code>, so the role a user claims at
+    signup is the role they get. This is complete privilege escalation available to
+    anyone who can reach the site.
+  </p>
+  <div class="fix">
+    <b>Fix.</b> Drop <code>role</code> from the registration serializer and force it
+    server-side. Create staff through an admin-only endpoint or the Django admin instead.
+  </div>
+<pre class="code"><span class="c"># serializers.py — registration must never accept a role</span>
+class RegisterSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id','username','email','password','first_name','last_name']
+        <span class="c">#           ^ no 'role' — self-signup is always a patient</span>
+
+    def create(self, validated_data):
+        return User.objects.create_user(**validated_data, role=User.Role.PATIENT)</pre>
+  <div class="fix">
+    <b>Done when.</b> Posting <code>{"role":"admin"}</code> to <code>/register/</code>
+    produces a user whose role is <code>patient</code>, and a test asserts it. Role
+    dropdown removed from the React form.
+  </div>
+</div>
+
+<div class="finding">
+  <div class="hd"><span class="tag t-crit">CRITICAL</span> &nbsp;C-2 · Every user can read every record</div>
+  <div class="loc">hms/backend/permissions.py · all viewsets in views.py</div>
+  <p>
+    <code>RoleWritePermission.has_permission</code> returns <code>True</code> for
+    anything in <code>SAFE_METHODS</code>, and no viewset overrides
+    <code>get_queryset()</code>. So role checks apply to writes only — reads are wide
+    open to any logged-in user. A patient who just signed up can
+    <code>GET /patients/</code> and download your entire medical registry.
+  </p>
+  <div class="fix">
+    <b>Fix.</b> Scope rows to the requester in <code>get_queryset()</code> on every
+    viewset, and stop treating reads as automatically safe. Put the scoping in a shared
+    mixin so a new endpoint inherits it instead of relying on you remembering.
+  </div>
+<pre class="code"><span class="c"># views.py — a patient sees only themselves, a doctor only their own patients</span>
+def get_queryset(self):
+    qs, user = Patient.objects.all(), self.request.user
+    if user.role == User.Role.PATIENT:
+        return qs.filter(user=user)
+    if user.role == User.Role.DOCTOR:
+        return qs.filter(appointments__doctor__user=user).distinct()
+    return qs  <span class="c"># admin / receptionist see all</span></pre>
+  <div class="fix">
+    <b>Done when.</b> A patient requesting another patient's detail URL gets
+    <strong>404</strong>, not 403 — you don't confirm the record exists. Covered by the
+    permission-matrix tests in §6.
+  </div>
+</div>
+
+<div class="finding">
+  <div class="hd"><span class="tag t-crit">CRITICAL</span> &nbsp;C-3 · Patients can edit other people's appointments</div>
+  <div class="loc">hms/backend/permissions.py — AppointmentWrites</div>
+  <p>
+    <code>AppointmentWrites</code> allows write access to any patient or doctor for
+    <em>any</em> appointment row. A patient can approve their own booking, or cancel and
+    reschedule a stranger's.
+  </p>
+  <div class="fix">
+    <b>Fix.</b> Add <code>has_object_permission()</code> that compares the row's patient
+    or doctor to <code>request.user</code>. Approval becomes a separate action available
+    only to staff, not something a patient can set on themselves.
+  </div>
+</div>
+
+<div class="finding">
+  <div class="hd"><span class="tag t-crit">CRITICAL</span> &nbsp;C-4 · Secrets and debug settings committed to git</div>
+  <div class="loc">hms/hms/settings.py lines 23, 26, 28, 130</div>
+  <p>
+    A hard-coded <code>django-insecure-</code> secret key, <code>DEBUG = True</code>,
+    empty <code>ALLOWED_HOSTS</code>, and <code>CORS_ALLOW_ALL_ORIGINS = True</code>.
+    A published secret key lets anyone forge sessions and tokens; <code>DEBUG</code>
+    hands stack traces, settings and SQL to any visitor who triggers an error.
+  </p>
+  <div class="fix">
+    <b>Fix.</b> Move all four to environment variables with <code>django-environ</code>,
+    commit a <code>.env.example</code>, split settings into base/dev/prod, rotate the
+    leaked key, and replace the CORS wildcard with an explicit origin list. Add HSTS,
+    <code>SECURE_SSL_REDIRECT</code> and secure cookies in production.
+  </div>
+  <div class="fix">
+    <b>Done when.</b> <code>manage.py check --deploy</code> reports zero issues, checked in CI.
+  </div>
+</div>
+
+<div class="finding">
+  <div class="hd"><span class="tag t-crit">CRITICAL</span> &nbsp;C-5 · The admin saves passwords in plain text</div>
+  <div class="loc">hms/backend/admin.py:7</div>
+  <p>
+    Your <code>UserAdmin</code> subclasses <code>admin.ModelAdmin</code> instead of
+    <code>django.contrib.auth.admin.UserAdmin</code>. That loses the password-hashing
+    widget, so a password typed into the admin form is written to the database verbatim.
+  </p>
+  <div class="fix">
+    <b>Fix.</b> Subclass the real <code>UserAdmin</code> and add <code>role</code> to its
+    <code>fieldsets</code> and <code>add_fieldsets</code>. Also register <code>Bill</code>,
+    which you never registered at all.
+  </div>
+</div>
+
+<div class="finding">
+  <div class="hd"><span class="tag t-crit">CRITICAL</span> &nbsp;C-6 · Nobody else can install your backend</div>
+  <div class="loc">project root</div>
+  <p>
+    There is no <code>requirements.txt</code>, no <code>pyproject.toml</code> and no
+    lockfile anywhere in the repository. The backend is installable only on your machine,
+    and cannot be built by CI, a container, or a reviewer.
+  </p>
+  <div class="fix">
+    <b>Fix.</b> Add <code>pyproject.toml</code> with pinned versions and a lockfile,
+    split into runtime and dev dependencies. This is thirty minutes and it unblocks
+    everything in §7.
+  </div>
+</div>
+
+<h2 class="brk"><span class="num">3</span>High priority</h2>
+<p class="lede">Real defects and material gaps. Two of these — H-1 and H-2 — are actively breaking things right now.</p>
+
+<table>
+  <tr><th style="width:34px"></th><th style="width:200px">Issue</th><th>What's wrong, and the fix</th></tr>
+
+  <tr><td><strong>H-1</strong></td>
+      <td><strong>Stray tkinter import</strong><br><code>models.py:1</code></td>
+      <td><code>from tkinter.tix import STATUS</code> sits at the top of your models file — an
+      IDE autocomplete accident. <code>tkinter.tix</code> was <strong>removed in Python 3.13</strong>,
+      and <code>tkinter</code> isn't in slim container images, so this breaks both a modern
+      interpreter and any Docker deploy. It's unused. <b>Delete the line.</b></td></tr>
+
+  <tr><td><strong>H-2</strong></td>
+      <td><strong>Filtering is dead code</strong><br><code>views.py</code>, <code>settings.py</code></td>
+      <td><code>DjangoFilterBackend</code> is imported but never attached to anything —
+      <code>filter_backends</code>, <code>filterset_fields</code> and
+      <code>DEFAULT_FILTER_BACKENDS</code> appear nowhere in the project. Your Appointments page
+      sends doctor, patient and date params that DRF discards. <b>Register the backends globally
+      and give each viewset a <code>filterset_class</code>.</b> Return 400 on an unknown filter
+      rather than ignoring it.</td></tr>
+
+  <tr><td><strong>H-3</strong></td>
+      <td><strong>No pagination</strong><br><code>settings.py</code></td>
+      <td>Every list endpoint serialises the whole table. At real volume this is both slow and a
+      denial-of-service vector. <b>Set <code>PageNumberPagination</code> with
+      <code>PAGE_SIZE = 25</code>,</b> capped at 100.</td></tr>
+
+  <tr><td><strong>H-4</strong></td>
+      <td><strong>Routes aren't protected</strong><br><code>App.jsx</code></td>
+      <td>The <code>&lt;Layout /&gt;</code> branch has no auth guard, so a logged-out visitor can
+      open <code>/patients</code> and render the shell. Only the API 401 stops data loading, which
+      gives a broken screen instead of a redirect. <b>Add a <code>&lt;ProtectedRoute&gt;</code>
+      wrapper</b> that redirects to login and remembers where they were going.</td></tr>
+
+  <tr><td><strong>H-5</strong></td>
+      <td><strong>Sessions die after 5 minutes</strong><br><code>api.js</code></td>
+      <td>You have a request interceptor but no response interceptor. SimpleJWT's default access
+      token lasts 5 minutes and your stored <code>refresh_token</code> is never used, so every
+      session silently breaks. There's also no logout endpoint, so tokens stay valid after signout.
+      <b>Add a 401 interceptor that refreshes once and replays the request</b> — share one in-flight
+      promise so concurrent 401s don't cause a refresh storm.</td></tr>
+
+  <tr><td><strong>H-6</strong></td>
+      <td><strong>Doctors can be double-booked</strong><br><code>models.py</code></td>
+      <td>Nothing stops two appointments at the same time with the same doctor, or a booking in the
+      past, or one against a doctor marked unavailable. No constraint, no <code>clean()</code>.
+      <b>Add a unique constraint on (doctor, datetime) for non-cancelled rows</b> plus validation,
+      and reserve slots with <code>select_for_update()</code>.</td></tr>
+
+  <tr><td><strong>H-7</strong></td>
+      <td><strong>Any doctor can prescribe for any patient</strong><br><code>serializers.py</code></td>
+      <td>Prescriptions are never checked against the appointment's own doctor, so one doctor can
+      write into another's consultation. <b>Validate that
+      <code>appointment.doctor == request.user.doctor</code></b> and store
+      <code>prescribed_by</code>.</td></tr>
+
+  <tr><td><strong>H-8</strong></td>
+      <td><strong>Middleware duplicated and misordered</strong><br><code>settings.py:51,57,58</code></td>
+      <td><code>CommonMiddleware</code> is listed twice and <code>CorsMiddleware</code> sits below it.
+      <code>django-cors-headers</code> requires placement <em>above</em> <code>CommonMiddleware</code>
+      or CORS headers go missing on redirects. <b>Remove the duplicate, move CORS up.</b></td></tr>
+
+  <tr><td><strong>H-9</strong></td>
+      <td><strong>Zero tests</strong><br><code>tests.py</code></td>
+      <td>The file contains only the scaffold comment. None of the authorisation rules above can be
+      proven or protected from regression. <b>This is what makes the security work trustworthy</b> —
+      see §6.</td></tr>
+
+  <tr><td><strong>H-10</strong></td>
+      <td><strong>Registration creates orphaned users</strong><br>registration flow</td>
+      <td>Signing up as a doctor or patient creates a <code>User</code> but no
+      <code>Doctor</code>/<code>Patient</code> profile row, so the account can't be booked,
+      prescribed to or billed. It exists but is invisible to every feature. <b>Create both inside one
+      <code>transaction.atomic()</code></b> and backfill existing orphans with a data migration.</td></tr>
+</table>
+
+<h2 class="brk"><span class="num">4</span>Medium and low</h2>
+<p class="lede">Not urgent, but this is the difference between "student project" and "professional codebase".</p>
+
+<h3>Model hygiene</h3>
+<ul>
+  <li>No <code>__str__()</code> on any model — your admin shows <code>Doctor object (3)</code> in every dropdown.</li>
+  <li>No <code>Meta.ordering</code> — combined with pagination this gives unstable page contents and warnings.</li>
+  <li>No <code>related_name</code> on any foreign key, so reverse lookups fall back to <code>_set</code>.</li>
+  <li><code>gender</code> and <code>blood_group</code> are free text with no <code>choices</code> — you'll get "M", "male", "Male", "b+" and never be able to query it.</li>
+  <li><code>User.email</code> is neither unique nor required; <code>role</code> has no default, so a user made outside the serializer gets an empty role matching no rule.</li>
+  <li>Missing <code>db_index</code> on every column you filter by.</li>
+  <li>Records are hard-deleted and cascade. <strong>Clinical records must be retained</strong> — deletion has to be an archive flag, not a <code>DELETE</code>.</li>
+</ul>
+
+<h3>API and performance</h3>
+<ul>
+  <li><strong>N+1 queries everywhere.</strong> Your serializers nest <code>user</code> and <code>get_prescription_medicines()</code> runs a fresh query per row, with no <code>select_related</code> or <code>prefetch_related</code> anywhere.</li>
+  <li><code>PrescriptionSerializer</code> overrides <code>create()</code> but not <code>update()</code>, so a PATCH carrying medicines silently drops them.</li>
+  <li>No API documentation — the contract exists only in the source.</li>
+  <li>No rate limiting, so <code>/login/</code> is open to unlimited credential stuffing.</li>
+  <li>No structured logging, error tracking or health-check endpoint.</li>
+  <li><strong>No audit trail.</strong> Nothing records who read or changed a patient record. This is mandatory in healthcare and the hardest thing on this list to add later — which is why it's in phase 1, not phase 6.</li>
+</ul>
+
+<h3>Frontend and repo</h3>
+<ul>
+  <li>API base URL hard-coded to <code>127.0.0.1:8000</code>, so the frontend can't be built for any other environment.</li>
+  <li>Tokens in <code>localStorage</code> are readable by any injected script.</li>
+  <li>Every page hand-rolls <code>useEffect</code> + <code>useState</code> fetching — no caching, dedup, retry or invalidation.</li>
+  <li>The sidebar shows all six modules to every role regardless of permission.</li>
+  <li>In <code>Layout.jsx</code> the logout button uses <code>absolute bottom-6</code> inside a non-relative parent, so it anchors to the viewport rather than the sidebar.</li>
+  <li>No error boundary and no 404 page — unknown routes silently redirect to <code>/appointments</code>.</li>
+  <li>No <code>.env.example</code>, licence or contributing guide. Your README advertises PostgreSQL but only SQLite is configured.</li>
+  <li>ESLint is configured but never enforced; nothing lints the Python at all.</li>
+  <li>The Django app is called <code>backend</code>, which blocks splitting it into real bounded apps.</li>
+</ul>
+
+<h2 class="brk"><span class="num">5</span>What to build</h2>
+<p class="lede">Fixing defects gets you to correct. This section is what gets you to industry standard.</p>
+
+<h3>5.1 Roles and the permission matrix</h3>
+<p>
+Add a <strong>pharmacist</strong> role — you have a medicines module with nobody who owns it.
+This table is the specification to implement in <code>get_queryset()</code> and test against.
+</p>
+<p style="font-size:9.8pt;color:#5d6b7f">
+<strong>R</strong> read all · <strong>R•</strong> read own only · <strong>W</strong> write all ·
+<strong>W•</strong> write own only · <strong>—</strong> no access
+</p>
+<table>
+  <tr><th>Resource</th><th>Admin</th><th>Doctor</th><th>Reception</th><th>Pharmacist</th><th>Patient</th></tr>
+  <tr><td>Users &amp; roles</td><td>R W</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+  <tr><td>Departments</td><td>R W</td><td>R</td><td>R</td><td>R</td><td>R</td></tr>
+  <tr><td>Doctors</td><td>R W</td><td>R / W•</td><td>R</td><td>R</td><td>R profile</td></tr>
+  <tr><td>Patients</td><td>R W</td><td>R• own appts</td><td>R W</td><td>—</td><td>R• W•</td></tr>
+  <tr><td>Appointments</td><td>R W</td><td>R• W•</td><td>R W</td><td>—</td><td>R• W•</td></tr>
+  <tr><td>Prescriptions</td><td>R</td><td>R• W•</td><td>—</td><td>R• dispensable</td><td>R•</td></tr>
+  <tr><td>Medicines &amp; stock</td><td>R W</td><td>R</td><td>R</td><td>R W</td><td>—</td></tr>
+  <tr><td>Bills &amp; payments</td><td>R W</td><td>—</td><td>R W</td><td>—</td><td>R•</td></tr>
+  <tr><td>Audit log</td><td>R</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+</table>
+
+<h3>5.2 Data model changes</h3>
+<table>
+  <tr><th style="width:150px">Model</th><th style="width:60px"></th><th>Changes</th></tr>
+  <tr><td><code>Patient</code></td><td>extend</td>
+      <td>Unique medical record number, emergency contact, allergies, chronic conditions. <strong>Replace the stored <code>age</code> integer with <code>date_of_birth</code></strong> and derive age — a stored age is wrong the day after you save it.</td></tr>
+  <tr><td><code>Doctor</code></td><td>extend</td>
+      <td>Licence number, consultation fee, qualification, slot duration.</td></tr>
+  <tr><td><code>DoctorSchedule</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Weekday, start, end, slot length. Defines when a doctor is bookable and drives slot generation.</td></tr>
+  <tr><td><code>Appointment</code></td><td>extend</td>
+      <td>Reason, duration, cancellation reason, check-in time, and the uniqueness constraint from H-6.</td></tr>
+  <tr><td><code>Prescription</code></td><td>extend</td>
+      <td><code>prescribed_by</code>, follow-up date, status (draft / issued / dispensed).</td></tr>
+  <tr><td><code>Medicine</code></td><td>extend</td>
+      <td>Generic name, manufacturer, unit price, prescription-required flag.</td></tr>
+  <tr><td><code>MedicineStock</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Batch, quantity on hand, reorder level, expiry. Your README calls the current model an inventory, but it has no quantities — it's a catalogue.</td></tr>
+  <tr><td><code>Bill</code></td><td>rework</td>
+      <td>Invoice number, link to appointment, subtotal / tax / discount / total, status, due date. <strong>Total derives from line items</strong> rather than being typed in.</td></tr>
+  <tr><td><code>BillItem</code>, <code>Payment</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Itemised charges, and payments that support partial settlement.</td></tr>
+  <tr><td><code>AuditLog</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Actor, action, target, field-level diff, IP, timestamp. <strong>Append-only</strong> — saving over or deleting a row raises.</td></tr>
+  <tr><td><code>Notification</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Recipient, message, read flag. Backs in-app alerts and the email queue.</td></tr>
+</table>
+
+<h3>5.3 Features worth adding</h3>
+<ul>
+  <li><strong>Slot-based booking.</strong> <code>/doctors/{id}/available-slots/?date=</code> returns genuinely free slots. Booking a taken one returns 409.</li>
+  <li><strong>Role dashboards.</strong> One endpoint, role-appropriate payload — today's schedule for a doctor, the queue and unpaid invoices for reception, revenue and low stock for an admin. This is the single biggest visible upgrade to the app.</li>
+  <li><strong>Real invoicing.</strong> Line items, partial payments, and a printable PDF invoice.</li>
+  <li><strong>Pharmacy dispensing.</strong> Decrement stock atomically, oldest non-expired batch first, with alerts on low stock and near expiry.</li>
+  <li><strong>Notifications.</strong> Booking confirmations and 24-hour reminders, sent through Celery so the request never waits on SMTP.</li>
+  <li><strong>Patient history timeline</strong> and admin reports (revenue by department, doctor utilisation, no-show rate) exportable to CSV.</li>
+</ul>
+
+<h3 class="brk">5.4 Target architecture</h3>
+<svg viewBox="0 0 700 300" width="100%" style="max-width:660px;display:block;margin:10px auto 6px">
+  <defs>
+    <style>
+      .bx { fill:#f7f9fc; stroke:#9fb2c8; stroke-width:1.4; rx:6 }
+      .bxa{ fill:#e9f4f2; stroke:#3f9d93; stroke-width:1.6; rx:6 }
+      .lb { font:600 11.5px "Segoe UI",sans-serif; fill:#10243f }
+      .sm { font:10px "Segoe UI",sans-serif; fill:#5d6b7f }
+      .ln { stroke:#7d90a8; stroke-width:1.4; fill:none }
+    </style>
+    <marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" fill="#7d90a8"/>
+    </marker>
+  </defs>
+
+  <rect class="bx" x="20" y="16" width="120" height="46"/>
+  <text class="lb" x="80" y="37" text-anchor="middle">Browser</text>
+  <text class="sm" x="80" y="52" text-anchor="middle">React SPA</text>
+
+  <rect class="bx" x="190" y="16" width="130" height="46"/>
+  <text class="lb" x="255" y="37" text-anchor="middle">Nginx</text>
+  <text class="sm" x="255" y="52" text-anchor="middle">static + proxy</text>
+
+  <rect class="bxa" x="190" y="105" width="130" height="90"/>
+  <text class="lb" x="255" y="130" text-anchor="middle">Django 6</text>
+  <text class="sm" x="255" y="147" text-anchor="middle">accounts · clinical</text>
+  <text class="sm" x="255" y="161" text-anchor="middle">pharmacy · billing</text>
+  <text class="sm" x="255" y="175" text-anchor="middle">core (audit)</text>
+
+  <rect class="bx" x="410" y="105" width="120" height="46"/>
+  <text class="lb" x="470" y="126" text-anchor="middle">PostgreSQL</text>
+  <text class="sm" x="470" y="141" text-anchor="middle">17</text>
+
+  <rect class="bx" x="410" y="172" width="120" height="46"/>
+  <text class="lb" x="470" y="193" text-anchor="middle">Redis</text>
+  <text class="sm" x="470" y="208" text-anchor="middle">cache + broker</text>
+
+  <rect class="bx" x="580" y="172" width="100" height="46"/>
+  <text class="lb" x="630" y="193" text-anchor="middle">Celery</text>
+  <text class="sm" x="630" y="208" text-anchor="middle">worker + beat</text>
+
+  <rect class="bx" x="190" y="238" width="130" height="44"/>
+  <text class="lb" x="255" y="258" text-anchor="middle">OpenAPI</text>
+  <text class="sm" x="255" y="273" text-anchor="middle">/api/docs</text>
+
+  <line class="ln" x1="140" y1="39" x2="185" y2="39" marker-end="url(#a)"/>
+  <line class="ln" x1="255" y1="62"  x2="255" y2="100" marker-end="url(#a)"/>
+  <line class="ln" x1="320" y1="128" x2="405" y2="128" marker-end="url(#a)"/>
+  <line class="ln" x1="320" y1="172" x2="405" y2="193" marker-end="url(#a)"/>
+  <line class="ln" x1="530" y1="195" x2="575" y2="195" marker-end="url(#a)"/>
+  <line class="ln" x1="255" y1="195" x2="255" y2="233" marker-end="url(#a)"/>
+  <text class="sm" x="345" y="80">HTTPS · /api/v1/*</text>
+</svg>
+<p>
+Stay a monolith — at this scale it's the right call, and bounded Django apps give you the
+modularity without the cost of distributed systems. Move to PostgreSQL because you need row
+locking for slot booking and JSON for the audit diff. Add Redis only once Celery and dashboard
+caching actually justify it. Most importantly, <strong>keep authorisation in querysets and
+managers rather than in views</strong>, so a new endpoint is scoped correctly by default instead
+of by you remembering to do it.
+</p>
+
+<h2 class="brk"><span class="num">6</span>Testing</h2>
+<p class="lede">You currently have none, and it's what makes everything in §2 believable.</p>
+<p>
+The single most valuable thing you can write is a <strong>permission matrix test</strong>: loop
+every combination of role × resource × method × ownership and assert the status code. That's
+roughly 200 cases from one parametrised test, and it turns §5.1 from a table in a document into
+something the build enforces.
+</p>
+<ul>
+  <li><code>pytest</code> + <code>pytest-django</code> + <code>factory_boy</code>, with a fixture per role.</li>
+  <li>Constraint tests: double booking, past dates, negative stock, bill totals.</li>
+  <li>Serializer tests for nested prescription create <em>and</em> update.</li>
+  <li><code>assertNumQueries</code> caps on list endpoints so N+1s can't come back.</li>
+  <li>Vitest for the auth context and refresh interceptor; one Playwright run through book → consult → prescribe → bill → pay.</li>
+  <li>Target ≥ 80% backend coverage overall, and <strong>100% on <code>permissions.py</code></strong>.</li>
+</ul>
+
+<h2><span class="num">7</span>Build order</h2>
+<p class="lede">Phases 0 to 2 are gating. Don't deploy anywhere reachable until phase 1 is done.</p>
+
+<table>
+  <tr><th style="width:150px">Phase</th><th style="width:70px">Time</th><th>Done when</th></tr>
+  <tr><td><strong>0 · Stop the bleeding</strong></td><td>2–3 days</td>
+      <td>C-1, C-4, C-5, C-6, H-1, H-8. No privilege escalation, no secrets in git, project installs from a manifest and imports on Python 3.13.</td></tr>
+  <tr><td><strong>1 · Authorisation</strong></td><td>1–1.5 wk</td>
+      <td>C-2, C-3, JWT lifecycle, audit log, and the permission matrix test green.</td></tr>
+  <tr><td><strong>2 · API platform</strong></td><td>1 wk</td>
+      <td>H-2, H-3, N+1 fixes, versioned <code>/api/v1/</code>, OpenAPI published.</td></tr>
+  <tr><td><strong>3 · Data model</strong></td><td>1–1.5 wk</td>
+      <td>§5.2 migrations, H-6, H-10, soft delete in place.</td></tr>
+  <tr><td><strong>4 · Frontend</strong></td><td>1.5–2 wk</td>
+      <td>H-4, H-5, TanStack Query, role-aware nav, real loading and error states.</td></tr>
+  <tr><td><strong>5 · Features</strong></td><td>2–3 wk</td>
+      <td>§5.3 — dashboards, invoicing, pharmacy, notifications, calendar.</td></tr>
+  <tr><td><strong>6 · Production</strong></td><td>1 wk</td>
+      <td>Docker Compose, CI green on all gates, coverage ≥ 80%, backup and restore rehearsed.</td></tr>
+</table>
+
+<div class="box">
+  <h4>If you only do one week of this</h4>
+  <p>
+    Do phase 0 and the <code>get_queryset()</code> scoping from C-2. That's the difference
+    between a project that leaks every patient record to anyone who signs up and one that
+    doesn't — and for a portfolio, being able to explain <em>why</em> you added record-level
+    scoping is worth more than any feature in phase 5.
+  </p>
+</div>
+
+<h2><span class="num">8</span>Dependencies and verification</h2>
+<div class="two">
+<div>
+<h4>Backend</h4>
+<ul style="font-size:10.2pt">
+  <li><code>django-environ</code> — config</li>
+  <li><code>psycopg[binary]</code> — Postgres</li>
+  <li><code>drf-spectacular</code> — OpenAPI</li>
+  <li><code>celery</code>, <code>redis</code>, <code>django-redis</code></li>
+  <li><code>gunicorn</code>, <code>whitenoise</code></li>
+  <li><code>argon2-cffi</code> — hashing</li>
+  <li><code>weasyprint</code> — invoice PDFs</li>
+  <li><code>sentry-sdk</code> — errors</li>
+  <li><code>pytest</code>, <code>pytest-django</code>, <code>pytest-cov</code>, <code>factory_boy</code></li>
+  <li><code>ruff</code>, <code>mypy</code>, <code>bandit</code>, <code>pip-audit</code></li>
+</ul>
+</div>
+<div>
+<h4>Frontend</h4>
+<ul style="font-size:10.2pt">
+  <li><code>@tanstack/react-query</code></li>
+  <li><code>react-hook-form</code> + <code>zod</code></li>
+  <li><code>recharts</code> — dashboard charts</li>
+  <li><code>date-fns</code>, <code>sonner</code></li>
+  <li><code>vitest</code> + Testing Library</li>
+  <li><code>@playwright/test</code></li>
+  <li><code>prettier</code></li>
+</ul>
+<h4>Infrastructure</h4>
+<ul style="font-size:10.2pt">
+  <li>PostgreSQL 17 · Redis 7 · Nginx</li>
+  <li>Docker Compose · GitHub Actions</li>
+</ul>
+</div>
+</div>
+
+<h4>Checklist before you call any phase done</h4>
+<ul class="chk">
+  <li>Tests written and passing; coverage hasn't dropped.</li>
+  <li>Every new endpoint has a row in the permission matrix test.</li>
+  <li>Migrations included and reversible.</li>
+  <li><code>ruff</code>, <code>mypy</code> and <code>eslint</code> clean.</li>
+  <li><code>manage.py check --deploy</code> still reports zero issues.</li>
+  <li>No secrets, patient data or debug output added.</li>
+</ul>
+
+<div class="foot">
+  Hospital Management System · PRD v2.0 · 4 September 2026 · reviewed at commit 12b2062
+</div>
+
+</body>
+</html>

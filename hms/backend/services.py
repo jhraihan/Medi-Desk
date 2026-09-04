@@ -5,8 +5,16 @@ from django.db.models import Count, F, Sum
 from django.utils import timezone
 
 from .models import (
-    Appointment, Bill, BillItem, Doctor, Medicine, MedicineStock,
-    Notification, Patient, Prescription, User,
+    Appointment,
+    Bill,
+    BillItem,
+    Doctor,
+    Medicine,
+    MedicineStock,
+    Notification,
+    Patient,
+    Prescription,
+    User,
 )
 
 
