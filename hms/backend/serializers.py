@@ -1,5 +1,8 @@
 from rest_framework import serializers
-from .models import User, Department, Doctor, Patient, Appointment, Prescription, Medicine, PrescriptionMedicine, Bill
+from .models import (
+    Appointment, Bill, BillItem, Department, Doctor, Medicine, Patient,
+    Payment, Prescription, PrescriptionMedicine, User,
+)
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 
@@ -51,10 +54,17 @@ class DoctorSerializer(serializers.ModelSerializer):
 
 class PatientSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
+    age = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Patient
-        fields = ['id', 'user', 'user_details', 'age', 'gender', 'blood_group', 'address', 'phone']
+        fields = [
+            'id', 'user', 'user_details', 'medical_record_number', 'date_of_birth', 'age',
+            'gender', 'blood_group', 'address', 'phone',
+            'emergency_contact_name', 'emergency_contact_phone',
+            'allergies', 'chronic_conditions',
+        ]
+        read_only_fields = ['medical_record_number']
 
 class AppointmentSerializer(serializers.ModelSerializer):
     class Meta:
@@ -112,8 +122,33 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             for item in medicines_data
         ])
 
+class BillItemSerializer(serializers.ModelSerializer):
+    line_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = BillItem
+        fields = ['id', 'description', 'service_type', 'quantity', 'unit_price', 'line_total']
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Payment
+        fields = ['id', 'bill', 'amount', 'method', 'reference', 'received_at']
+        read_only_fields = ['received_at']
+
+
 class BillSerializer(serializers.ModelSerializer):
+    items = BillItemSerializer(many=True, read_only=True)
+    payments = PaymentSerializer(many=True, read_only=True)
+    total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    amount_paid = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+
     class Meta:
         model = Bill
-        fields = '__all__'
-        read_only_fields = ['created_at']
+        fields = [
+            'id', 'patient', 'appointment', 'invoice_number', 'amount', 'tax', 'discount',
+            'paid', 'due_date', 'created_at', 'items', 'payments',
+            'total', 'amount_paid', 'balance',
+        ]
+        read_only_fields = ['created_at', 'invoice_number']

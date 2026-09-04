@@ -20,7 +20,7 @@ export default function Patients() {
   const [notice, setNotice] = useFlash();
 
   const [formIsOpen, setFormIsOpen] = useState(false);
-  const [age, setAge] = useState("");
+  const [dateOfBirth, setDateOfBirth] = useState("");
   const [gender, setGender] = useState("");
   const [bloodGroup, setBloodGroup] = useState("");
   const [address, setAddress] = useState("");
@@ -51,7 +51,7 @@ export default function Patients() {
     setIsSaving(true);
     try {
       await patientsApi.create({
-        age: Number(age),
+        date_of_birth: dateOfBirth,
         gender,
         blood_group: bloodGroup,
         address,
@@ -93,11 +93,11 @@ export default function Patients() {
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <Input
-              label="Age"
-              type="number"
+              label="Date of birth"
+              type="date"
               required
-              value={age}
-              onChange={(e) => setAge(e.target.value)}
+              value={dateOfBirth}
+              onChange={(e) => setDateOfBirth(e.target.value)}
             />
             <Select
               label="Gender"
@@ -175,7 +175,7 @@ export default function Patients() {
               <td className="px-3 py-2 text-slate-700">
                 {pat.user_details?.first_name} {pat.user_details?.last_name}
               </td>
-              <td className="px-3 py-2 text-slate-700">{pat.age}</td>
+              <td className="px-3 py-2 text-slate-700">{pat.age ?? "—"}</td>
               <td className="px-3 py-2 text-slate-700">{pat.gender}</td>
               <td className="px-3 py-2 text-slate-700">{pat.blood_group}</td>
               <td className="px-3 py-2 text-slate-700">{pat.phone}</td>

@@ -1,7 +1,12 @@
+from datetime import date
+
+from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from .models import Appointment, Bill, Doctor, Patient, User
+from decimal import Decimal
+
+from .models import AuditLog, Appointment, Bill, Doctor, Patient, Payment, User
 
 
 def make_user(username, role, **extra):
@@ -51,11 +56,11 @@ class ScopingTests(APITestCase):
         self.other_doctor_user = make_user('drother', User.Role.DOCTOR)
 
         self.alice_patient = Patient.objects.create(
-            user=self.alice, age=30, gender='female', blood_group='A+',
-            address='1 Road', phone='0100000001')
+            user=self.alice, date_of_birth=date(1995, 6, 1), gender='female',
+            blood_group='A+', address='1 Road', phone='0100000001')
         self.bob_patient = Patient.objects.create(
-            user=self.bob, age=41, gender='male', blood_group='O-',
-            address='2 Road', phone='0100000002')
+            user=self.bob, date_of_birth=date(1984, 2, 20), gender='male',
+            blood_group='O-', address='2 Road', phone='0100000002')
 
         self.doctor = Doctor.objects.create(
             user=self.doctor_user, specialization='Cardiology',
@@ -152,3 +157,55 @@ class FilteringTests(ScopingTests):
         admin = make_user('boss3', User.Role.ADMIN)
         self.client.force_authenticate(admin)
         self.assertIn('count', self.client.get('/api/v1/patients/').data)
+
+
+class ModelRuleTests(ScopingTests):
+    def test_age_is_derived_from_date_of_birth(self):
+        born = date(1995, 6, 1)
+        today = date.today()
+        expected = today.year - born.year - (
+            0 if (today.month, today.day) >= (born.month, born.day) else 1)
+        self.assertEqual(self.alice_patient.age, expected)
+
+    def test_patient_gets_a_medical_record_number(self):
+        self.assertTrue(self.alice_patient.medical_record_number.startswith('MRN'))
+        self.assertNotEqual(
+            self.alice_patient.medical_record_number,
+            self.bob_patient.medical_record_number)
+
+    def test_doctor_cannot_be_double_booked(self):
+        with self.assertRaises(IntegrityError):
+            Appointment.objects.create(
+                patient=self.bob_patient,
+                doctor=self.doctor,
+                appointment_date=self.alice_appt.appointment_date,
+            )
+
+    def test_cancelled_slot_can_be_rebooked(self):
+        self.alice_appt.status = 'cancelled'
+        self.alice_appt.save()
+        Appointment.objects.create(
+            patient=self.bob_patient,
+            doctor=self.doctor,
+            appointment_date=self.alice_appt.appointment_date,
+        )
+
+    def test_bill_totals_are_derived(self):
+        bill = Bill.objects.create(
+            patient=self.alice_patient, amount=Decimal('100'),
+            tax=Decimal('10'), discount=Decimal('5'))
+        self.assertEqual(bill.total, Decimal('105'))
+        self.assertEqual(bill.balance, Decimal('105'))
+
+        Payment.objects.create(bill=bill, amount=Decimal('40'))
+        bill.refresh_from_db()
+        self.assertEqual(bill.amount_paid, Decimal('40'))
+        self.assertEqual(bill.balance, Decimal('65'))
+
+    def test_audit_log_is_append_only(self):
+        entry = AuditLog.objects.create(
+            action=AuditLog.Action.READ, target_model='Patient', target_id='1')
+        with self.assertRaises(ValueError):
+            entry.save()
+        with self.assertRaises(ValueError):
+            entry.delete()
