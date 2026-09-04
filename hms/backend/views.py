@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.utils import extend_schema
 from rest_framework import generics, viewsets
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -39,6 +40,7 @@ class RegisterView(generics.CreateAPIView):
     throttle_scope = 'register'
 
 
+@extend_schema(responses=UserSerializer)
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 

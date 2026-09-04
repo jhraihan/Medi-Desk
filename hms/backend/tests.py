@@ -12,7 +12,7 @@ def make_user(username, role, **extra):
 
 class RegistrationTests(APITestCase):
     def test_cannot_self_register_as_admin(self):
-        response = self.client.post('/register/', {
+        response = self.client.post('/api/v1/register/', {
             'username': 'sneaky',
             'email': 'sneaky@example.com',
             'password': 'Str0ngPassw0rd!x',
@@ -23,7 +23,7 @@ class RegistrationTests(APITestCase):
         self.assertEqual(User.objects.get(username='sneaky').role, User.Role.PATIENT)
 
     def test_registration_does_not_leak_role_field(self):
-        response = self.client.post('/register/', {
+        response = self.client.post('/api/v1/register/', {
             'username': 'plain',
             'email': 'plain@example.com',
             'password': 'Str0ngPassw0rd!x',
@@ -31,7 +31,7 @@ class RegistrationTests(APITestCase):
         self.assertNotIn('role', response.data)
 
     def test_password_is_hashed(self):
-        self.client.post('/register/', {
+        self.client.post('/api/v1/register/', {
             'username': 'hashme',
             'email': 'h@example.com',
             'password': 'Str0ngPassw0rd!x',
@@ -73,41 +73,41 @@ class ScopingTests(APITestCase):
 
     def test_patient_list_only_returns_self(self):
         self.client.force_authenticate(self.alice)
-        response = self.client.get('/patients/')
+        response = self.client.get('/api/v1/patients/')
         ids = [row['id'] for row in response.data['results']]
         self.assertEqual(ids, [self.alice_patient.id])
 
     def test_patient_cannot_read_another_patient_by_id(self):
         self.client.force_authenticate(self.alice)
-        response = self.client.get(f'/patients/{self.bob_patient.id}/')
+        response = self.client.get(f'/api/v1/patients/{self.bob_patient.id}/')
         self.assertEqual(response.status_code, 404)
 
     def test_patient_cannot_read_another_patients_bill(self):
         self.client.force_authenticate(self.alice)
         self.assertEqual(
-            self.client.get(f'/bills/{self.bob_bill.id}/').status_code, 404)
+            self.client.get(f'/api/v1/bills/{self.bob_bill.id}/').status_code, 404)
         self.assertEqual(
-            self.client.get(f'/bills/{self.alice_bill.id}/').status_code, 200)
+            self.client.get(f'/api/v1/bills/{self.alice_bill.id}/').status_code, 200)
 
     def test_doctor_only_sees_patients_they_have_appointments_with(self):
         self.client.force_authenticate(self.doctor_user)
-        ids = [row['id'] for row in self.client.get('/patients/').data['results']]
+        ids = [row['id'] for row in self.client.get('/api/v1/patients/').data['results']]
         self.assertEqual(ids, [self.alice_patient.id])
 
         self.client.force_authenticate(self.other_doctor_user)
-        self.assertEqual(self.client.get('/patients/').data['results'], [])
+        self.assertEqual(self.client.get('/api/v1/patients/').data['results'], [])
 
     def test_admin_sees_everything(self):
         admin = make_user('boss', User.Role.ADMIN)
         self.client.force_authenticate(admin)
-        self.assertEqual(len(self.client.get('/patients/').data['results']), 2)
+        self.assertEqual(len(self.client.get('/api/v1/patients/').data['results']), 2)
 
     def test_anonymous_is_rejected(self):
-        self.assertEqual(self.client.get('/patients/').status_code, 401)
+        self.assertEqual(self.client.get('/api/v1/patients/').status_code, 401)
 
     def test_patient_cannot_write_bills(self):
         self.client.force_authenticate(self.alice)
-        response = self.client.post('/bills/', {
+        response = self.client.post('/api/v1/bills/', {
             'patient': self.alice_patient.id, 'amount': '1.00', 'paid': True,
         }, format='json')
         self.assertEqual(response.status_code, 403)
@@ -116,7 +116,7 @@ class ScopingTests(APITestCase):
 class PrescriptionAuthorshipTests(ScopingTests):
     def test_doctor_cannot_prescribe_for_another_doctors_appointment(self):
         self.client.force_authenticate(self.other_doctor_user)
-        response = self.client.post('/prescriptions/', {
+        response = self.client.post('/api/v1/prescriptions/', {
             'appointment': self.alice_appt.id,
             'diagnosis': 'nothing',
             'notes': '',
@@ -126,7 +126,7 @@ class PrescriptionAuthorshipTests(ScopingTests):
 
     def test_doctor_can_prescribe_for_own_appointment(self):
         self.client.force_authenticate(self.doctor_user)
-        response = self.client.post('/prescriptions/', {
+        response = self.client.post('/api/v1/prescriptions/', {
             'appointment': self.alice_appt.id,
             'diagnosis': 'checked',
             'notes': '',
@@ -143,12 +143,12 @@ class FilteringTests(ScopingTests):
             appointment_date=timezone.now() + timezone.timedelta(days=2))
 
         self.client.force_authenticate(admin)
-        self.assertEqual(len(self.client.get('/appointments/').data['results']), 2)
+        self.assertEqual(len(self.client.get('/api/v1/appointments/').data['results']), 2)
 
-        filtered = self.client.get(f'/appointments/?doctor={self.doctor.id}')
+        filtered = self.client.get(f'/api/v1/appointments/?doctor={self.doctor.id}')
         self.assertEqual(len(filtered.data['results']), 1)
 
     def test_responses_are_paginated(self):
         admin = make_user('boss3', User.Role.ADMIN)
         self.client.force_authenticate(admin)
-        self.assertIn('count', self.client.get('/patients/').data)
+        self.assertIn('count', self.client.get('/api/v1/patients/').data)

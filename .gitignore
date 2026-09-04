@@ -38,3 +38,5 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
+# generated OpenAPI schema
+schema.yml

@@ -50,6 +50,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'django_filters',
+    'drf_spectacular',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
 ]
@@ -155,6 +156,14 @@ REST_FRAMEWORK = {
         'register': '5/hour',
         'login': '10/hour',
     },
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Hospital Management System API',
+    'DESCRIPTION': 'Patients, appointments, prescriptions, pharmacy and billing.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
 }
 
 SIMPLE_JWT = {

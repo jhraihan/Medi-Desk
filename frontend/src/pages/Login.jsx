@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { login } from "../api.js";
+import { fetchMe, login } from "../api.js";
+import { useAuth } from "../auth-context.js";
 import { Alert, Button, Input } from "../components/index.js";
 
 export default function Login() {
@@ -9,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const navigate = useNavigate();
+  const { setUser } = useAuth();
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -21,6 +23,7 @@ export default function Login() {
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
 
+      setUser(await fetchMe());
       navigate("/appointments", { replace: true });
     } catch (problem) {
       const errorMsg =
