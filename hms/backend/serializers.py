@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     Appointment, Bill, BillItem, Department, Doctor, Medicine, Patient,
-    Payment, Prescription, PrescriptionMedicine, User,
+    Notification, Payment, Prescription, PrescriptionMedicine, User,
 )
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -110,7 +110,7 @@ class MedicineSerializer(serializers.ModelSerializer):
 class PrescriptionMedicineSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrescriptionMedicine
-        fields = ['medicine', 'dosage', 'duration']
+        fields = ['medicine', 'dosage', 'duration', 'frequency', 'instructions', 'quantity']
 
 class PrescriptionSerializer(serializers.ModelSerializer):
     medicines = PrescriptionMedicineSerializer(many=True, write_only=True)
@@ -118,7 +118,7 @@ class PrescriptionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Prescription
-        fields = ['id', 'appointment', 'diagnosis', 'notes', 'created_at', 'medicines', 'prescription_medicines']
+        fields = ['id', 'appointment', 'diagnosis', 'notes', 'status', 'follow_up_date', 'created_at', 'medicines', 'prescription_medicines']
         read_only_fields = ['created_at']
 
     def validate_appointment(self, appointment):
@@ -182,3 +182,9 @@ class BillSerializer(serializers.ModelSerializer):
             'total', 'amount_paid', 'balance',
         ]
         read_only_fields = ['created_at', 'invoice_number']
+
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'message', 'is_read', 'created_at']
+        read_only_fields = ['message', 'created_at']

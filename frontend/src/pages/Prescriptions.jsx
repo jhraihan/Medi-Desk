@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
-import { appointmentsApi, medicinesApi, prescriptionsApi } from "../api.js";
+import { appointmentsApi, dispensePrescription, medicinesApi, prescriptionsApi } from "../api.js";
+import { useAuth } from "../auth-context.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -14,6 +15,8 @@ import {
 } from "../components/index.js";
 
 export default function Prescriptions() {
+  const { user } = useAuth();
+  const canDispense = ["pharmacist", "admin"].includes(user?.role);
   const [prescriptions, setPrescriptions] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [medicines, setMedicines] = useState([]);
@@ -31,6 +34,16 @@ export default function Prescriptions() {
   const [isSaving, setIsSaving] = useState(false);
 
   const [reloadCount, setReloadCount] = useState(0);
+
+  async function handleDispense(id) {
+    try {
+      await dispensePrescription(id);
+      setNotice("Prescription dispensed and stock updated.");
+      setReloadCount((count) => count + 1);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not dispense this prescription.");
+    }
+  }
   const reload = () => setReloadCount((c) => c + 1);
 
   useEffect(() => {
@@ -252,6 +265,7 @@ export default function Prescriptions() {
             "Notes",
             "Medicines Count",
             "Date",
+            "Status",
           ]}
         >
           {prescriptions.map((p) => (
@@ -270,6 +284,20 @@ export default function Prescriptions() {
               </td>
               <td className="px-3 py-2 text-slate-700">
                 {new Date(p.created_at).toLocaleDateString()}
+              </td>
+              <td className="px-3 py-2">
+                {p.status === "dispensed" ? (
+                  <span className="text-xs font-semibold text-emerald-700">Dispensed</span>
+                ) : canDispense ? (
+                  <button
+                    onClick={() => handleDispense(p.id)}
+                    className="text-xs font-medium text-indigo-600 hover:underline"
+                  >
+                    Dispense
+                  </button>
+                ) : (
+                  <span className="text-xs capitalize text-slate-500">{p.status ?? "issued"}</span>
+                )}
               </td>
             </tr>
           ))}

@@ -141,9 +141,18 @@ class Appointment(models.Model):
         return f'{self.patient} with {self.doctor} on {self.appointment_date:%d %b %Y %H:%M}'
 
 class Prescription(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'draft', 'Draft'
+        ISSUED = 'issued', 'Issued'
+        DISPENSED = 'dispensed', 'Dispensed'
+
     appointment = models.OneToOneField(Appointment, on_delete=models.CASCADE, related_name='prescription')
+    prescribed_by = models.ForeignKey(
+        Doctor, on_delete=models.SET_NULL, null=True, blank=True, related_name='prescriptions')
     diagnosis = models.TextField()
     notes = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ISSUED)
+    follow_up_date = models.DateField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -201,6 +210,9 @@ class PrescriptionMedicine(models.Model):
     medicine = models.ForeignKey(Medicine, on_delete=models.CASCADE, related_name='prescribed_in')
     dosage = models.CharField(max_length=100)
     duration = models.CharField(max_length=100)
+    frequency = models.CharField(max_length=100, blank=True)
+    instructions = models.CharField(max_length=255, blank=True)
+    quantity = models.PositiveIntegerField(default=1)
 
     def __str__(self):
         return f'{self.medicine} ({self.dosage})'

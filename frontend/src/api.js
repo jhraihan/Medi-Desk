@@ -136,6 +136,35 @@ export async function fetchAvailableSlots(doctorId, day) {
   return response.data;
 }
 
+export async function dispensePrescription(id) {
+  const response = await API.post(`prescriptions/${id}/dispense/`);
+  return response.data;
+}
+
+export async function payBill(id, payment) {
+  const response = await API.post(`bills/${id}/pay/`, payment);
+  return response.data;
+}
+
+// The invoice endpoint needs the auth header, so a plain link in a new tab gets
+// a 401. Fetch it through the client and hand the browser a blob instead.
+export async function openInvoice(id) {
+  const response = await API.get(`bills/${id}/invoice/`, { responseType: "blob" });
+  const url = URL.createObjectURL(response.data);
+  window.open(url, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function fetchNotifications() {
+  const response = await API.get("notifications/");
+  return response.data;
+}
+
+export async function markNotificationsRead() {
+  const response = await API.post("notifications/mark-all-read/");
+  return response.data;
+}
+
 export const departmentsApi = createCrudApi("departments");
 export const doctorsApi = createCrudApi("doctors");
 export const patientsApi = createCrudApi("patients");

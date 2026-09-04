@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { billsApi, patientsApi } from "../api.js";
+import { billsApi, openInvoice, patientsApi, payBill } from "../api.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -67,13 +67,20 @@ export default function Billing() {
     }
   }
 
-  async function markAsPaid(id) {
+  async function settle(bill) {
+    const outstanding = bill.balance ?? bill.amount;
+    const entered = window.prompt(
+      `Amount to record against ${bill.invoice_number ?? `bill #${bill.id}`} (outstanding ${outstanding})`,
+      outstanding,
+    );
+    if (entered === null) return;
+
     try {
-      await billsApi.patch(id, { paid: true });
-      setNotice("Bill marked as paid.");
+      await payBill(bill.id, { amount: entered, method: "cash" });
+      setNotice("Payment recorded.");
       reload();
     } catch (err) {
-      setError(err.message || "Failed to update payment status.");
+      setError(err.response?.data?.detail || "Failed to record the payment.");
     }
   }
 
@@ -167,7 +174,12 @@ export default function Billing() {
                 Patient #{bill.patient}
               </td>
               <td className="px-3 py-2 font-medium text-slate-900">
-                ${bill.amount}
+                ${bill.total ?? bill.amount}
+                {bill.balance != null && Number(bill.balance) > 0 && (
+                  <span className="ml-1 text-xs font-normal text-rose-600">
+                    ({bill.balance} due)
+                  </span>
+                )}
               </td>
               <td className="px-3 py-2">
                 <span
@@ -184,14 +196,22 @@ export default function Billing() {
                 {new Date(bill.created_at).toLocaleDateString()}
               </td>
               <td className="px-3 py-2">
-                {!bill.paid && (
+                <div className="flex gap-3">
+                  {!bill.paid && (
+                    <button
+                      onClick={() => settle(bill)}
+                      className="text-xs font-medium text-indigo-600 hover:underline"
+                    >
+                      Record payment
+                    </button>
+                  )}
                   <button
-                    onClick={() => markAsPaid(bill.id)}
-                    className="text-xs font-medium text-indigo-600 hover:underline"
+                    onClick={() => openInvoice(bill.id)}
+                    className="text-xs font-medium text-slate-600 hover:underline"
                   >
-                    Mark as Paid
+                    Invoice
                   </button>
-                )}
+                </div>
               </td>
             </tr>
           ))}

@@ -1,4 +1,4 @@
-from datetime import date, time
+from datetime import date, time, timedelta
 
 from django.db import IntegrityError
 from django.utils import timezone
@@ -6,7 +6,10 @@ from rest_framework.test import APITestCase
 
 from decimal import Decimal
 
-from .models import AuditLog, Appointment, Bill, Doctor, DoctorSchedule, Patient, Payment, User
+from .models import (
+    Appointment, AuditLog, Bill, Doctor, DoctorSchedule, Medicine, MedicineStock,
+    Notification, Patient, Payment, Prescription, PrescriptionMedicine, User,
+)
 
 
 def make_user(username, role, **extra):
@@ -282,3 +285,130 @@ class DashboardTests(ScopingTests):
 
     def test_dashboard_requires_login(self):
         self.assertEqual(self.client.get('/api/v1/dashboard/').status_code, 401)
+
+
+class DispensingTests(ScopingTests):
+    def setUp(self):
+        super().setUp()
+        self.pharmacist = make_user('pharm', User.Role.PHARMACIST)
+        self.medicine = Medicine.objects.create(name='Amoxicillin', unit='box')
+        self.prescription = Prescription.objects.create(
+            appointment=self.alice_appt, diagnosis='infection')
+        PrescriptionMedicine.objects.create(
+            prescription=self.prescription, medicine=self.medicine,
+            dosage='1 daily', duration='5 days', quantity=3)
+
+    def _stock(self, quantity, days_to_expiry=90, batch='B1'):
+        return MedicineStock.objects.create(
+            medicine=self.medicine, batch_number=batch, quantity=quantity,
+            reorder_level=2, expiry_date=date.today() + timedelta(days=days_to_expiry))
+
+    def test_dispensing_decrements_stock(self):
+        batch = self._stock(10)
+        self.client.force_authenticate(self.pharmacist)
+        response = self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+
+        self.assertEqual(response.status_code, 200)
+        batch.refresh_from_db()
+        self.assertEqual(batch.quantity, 7)
+        self.prescription.refresh_from_db()
+        self.assertEqual(self.prescription.status, Prescription.Status.DISPENSED)
+
+    def test_cannot_dispense_more_than_stock(self):
+        self._stock(1)
+        self.client.force_authenticate(self.pharmacist)
+        response = self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('in stock', response.data['detail'])
+        self.prescription.refresh_from_db()
+        self.assertNotEqual(self.prescription.status, Prescription.Status.DISPENSED)
+
+    def test_oldest_batch_is_used_first(self):
+        soon = self._stock(2, days_to_expiry=10, batch='OLD')
+        later = self._stock(10, days_to_expiry=200, batch='NEW')
+
+        self.client.force_authenticate(self.pharmacist)
+        self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+
+        soon.refresh_from_db(); later.refresh_from_db()
+        self.assertEqual(soon.quantity, 0)
+        self.assertEqual(later.quantity, 9)
+
+    def test_expired_stock_is_not_used(self):
+        self._stock(50, days_to_expiry=-1, batch='EXPIRED')
+        self.client.force_authenticate(self.pharmacist)
+        response = self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+        self.assertEqual(response.status_code, 400)
+
+    def test_dispensing_twice_is_refused(self):
+        self._stock(20)
+        self.client.force_authenticate(self.pharmacist)
+        first = self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+        second = self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 400)
+
+    def test_only_pharmacists_can_dispense(self):
+        self._stock(20)
+        self.client.force_authenticate(self.doctor_user)
+        response = self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_low_stock_raises_a_notification(self):
+        self._stock(4)
+        self.client.force_authenticate(self.pharmacist)
+        self.client.post(f'/api/v1/prescriptions/{self.prescription.id}/dispense/')
+        self.assertTrue(
+            Notification.objects.filter(recipient=self.pharmacist, message__icontains='low on stock').exists())
+
+
+class PaymentApiTests(ScopingTests):
+    def test_paying_in_full_marks_the_bill_paid(self):
+        admin = make_user('boss5', User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+
+        response = self.client.post(
+            f'/api/v1/bills/{self.alice_bill.id}/pay/',
+            {'amount': '100.00', 'method': 'cash'}, format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.alice_bill.refresh_from_db()
+        self.assertTrue(self.alice_bill.paid)
+
+    def test_partial_payment_leaves_a_balance(self):
+        admin = make_user('boss6', User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+
+        self.client.post(f'/api/v1/bills/{self.alice_bill.id}/pay/',
+                         {'amount': '30.00', 'method': 'card'}, format='json')
+
+        self.alice_bill.refresh_from_db()
+        self.assertFalse(self.alice_bill.paid)
+        self.assertEqual(self.alice_bill.balance, Decimal('70.00'))
+
+    def test_invoice_renders(self):
+        admin = make_user('boss7', User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+        response = self.client.get(f'/api/v1/bills/{self.alice_bill.id}/invoice/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(self.alice_bill.invoice_number, response.content.decode())
+
+
+class NotificationApiTests(ScopingTests):
+    def test_you_only_see_your_own_notifications(self):
+        Notification.objects.create(recipient=self.alice, message='yours')
+        Notification.objects.create(recipient=self.bob, message='not yours')
+
+        self.client.force_authenticate(self.alice)
+        results = self.client.get('/api/v1/notifications/').data['results']
+        self.assertEqual([row['message'] for row in results], ['yours'])
+
+    def test_mark_all_read(self):
+        Notification.objects.create(recipient=self.alice, message='one')
+        Notification.objects.create(recipient=self.alice, message='two')
+
+        self.client.force_authenticate(self.alice)
+        response = self.client.post('/api/v1/notifications/mark-all-read/')
+        self.assertEqual(response.data['marked_read'], 2)
+        self.assertFalse(Notification.objects.filter(recipient=self.alice, is_read=False).exists())

@@ -70,3 +70,9 @@ class MedicineAccess(RolePermission):
 class BillAccess(RolePermission):
     read_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.PATIENT)
     write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST)
+
+
+class CanDispense(RolePermission):
+    read_roles = (User.Role.ADMIN, User.Role.PHARMACIST)
+    write_roles = (User.Role.ADMIN, User.Role.PHARMACIST)
+    message = 'Only a pharmacist can dispense a prescription.'

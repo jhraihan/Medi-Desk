@@ -12,6 +12,7 @@ from .views import (
     DepartmentViewSet,
     DoctorViewSet,
     MedicineViewSet,
+    NotificationViewSet,
     DashboardView,
     MeView,
     PatientViewSet,
@@ -27,6 +28,7 @@ router.register(r'appointments', AppointmentViewSet)
 router.register(r'prescriptions', PrescriptionViewSet)
 router.register(r'medicines', MedicineViewSet)
 router.register(r'bills', BillViewSet)
+router.register(r'notifications', NotificationViewSet, basename='notification')
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),

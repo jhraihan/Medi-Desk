@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ bill.invoice_number }}</title>
+  <style>
+    body { font-family: "Segoe UI", Arial, sans-serif; color: #1a1f2b; margin: 40px; font-size: 14px; }
+    h1 { color: #0d7a72; margin: 0 0 4px; font-size: 26px; }
+    .meta { color: #64748b; margin-bottom: 28px; }
+    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    th { background: #10243f; color: #fff; text-align: left; padding: 9px 10px; font-size: 12px; }
+    td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; }
+    .right { text-align: right; }
+    .totals { width: 280px; margin-left: auto; }
+    .totals td { border: 0; padding: 5px 10px; }
+    .due { font-weight: 700; font-size: 16px; border-top: 2px solid #0d7a72 !important; }
+    .paid { color: #0d7a72; } .unpaid { color: #b3123c; }
+    @media print { body { margin: 0; } }
+  </style>
+</head>
+<body>
+  <h1>Invoice {{ bill.invoice_number }}</h1>
+  <div class="meta">
+    Billed to <strong>{{ bill.patient }}</strong>
+    {% if bill.patient.medical_record_number %}({{ bill.patient.medical_record_number }}){% endif %}<br>
+    Issued {{ bill.created_at|date:"d F Y" }}
+    {% if bill.due_date %} &middot; due {{ bill.due_date|date:"d F Y" }}{% endif %}
+  </div>
+
+  <table>
+    <tr><th>Description</th><th>Type</th><th class="right">Qty</th><th class="right">Unit</th><th class="right">Amount</th></tr>
+    {% for item in bill.items.all %}
+    <tr>
+      <td>{{ item.description }}</td>
+      <td>{{ item.get_service_type_display }}</td>
+      <td class="right">{{ item.quantity }}</td>
+      <td class="right">{{ item.unit_price }}</td>
+      <td class="right">{{ item.line_total }}</td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No line items recorded.</td></tr>
+    {% endfor %}
+  </table>
+
+  <table class="totals">
+    <tr><td>Subtotal</td><td class="right">{{ bill.amount }}</td></tr>
+    <tr><td>Tax</td><td class="right">{{ bill.tax }}</td></tr>
+    <tr><td>Discount</td><td class="right">-{{ bill.discount }}</td></tr>
+    <tr><td>Total</td><td class="right">{{ bill.total }}</td></tr>
+    <tr><td>Paid</td><td class="right">{{ bill.amount_paid }}</td></tr>
+    <tr class="due">
+      <td>Balance</td>
+      <td class="right {% if bill.balance > 0 %}unpaid{% else %}paid{% endif %}">{{ bill.balance }}</td>
+    </tr>
+  </table>
+
+  {% if bill.payments.all %}
+  <h3>Payments</h3>
+  <table>
+    <tr><th>Date</th><th>Method</th><th>Reference</th><th class="right">Amount</th></tr>
+    {% for payment in bill.payments.all %}
+    <tr>
+      <td>{{ payment.received_at|date:"d M Y" }}</td>
+      <td>{{ payment.get_method_display }}</td>
+      <td>{{ payment.reference|default:"—" }}</td>
+      <td class="right">{{ payment.amount }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</body>
+</html>

@@ -1,17 +1,20 @@
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.http import HttpResponse
+from django.template.loader import render_to_string
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
-from rest_framework import generics, viewsets
+from rest_framework import generics, mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Appointment, Bill, Department, Doctor, Medicine, Patient, Prescription
-from .services import available_slots, dashboard_for
+from .models import Appointment, Bill, Department, Doctor, Medicine, Notification, Patient, Prescription
+from .services import DispenseError, available_slots, dashboard_for, dispense_prescription
 from .permissions import (
     AppointmentAccess,
     BillAccess,
@@ -20,6 +23,7 @@ from .permissions import (
     MedicineAccess,
     PatientAccess,
     PrescriptionAccess,
+    CanDispense,
     role_of,
 )
 from .serializers import (
@@ -28,7 +32,9 @@ from .serializers import (
     DepartmentSerializer,
     DoctorSerializer,
     MedicineSerializer,
+    NotificationSerializer,
     PatientSerializer,
+    PaymentSerializer,
     PrescriptionSerializer,
     RegisterSerializer,
     UserSerializer,
@@ -156,6 +162,22 @@ class PrescriptionViewSet(ScopedViewSet):
             return queryset.filter(appointment__doctor__user=user)
         return queryset
 
+    @extend_schema(request=None, responses=dict)
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, CanDispense])
+    def dispense(self, request, pk=None):
+        try:
+            taken = dispense_prescription(self.get_object(), actor=request.user)
+        except DispenseError as problem:
+            return Response({'detail': str(problem)}, status=400)
+
+        return Response({
+            'status': 'dispensed',
+            'batches': [
+                {'medicine': batch.medicine.name, 'batch': batch.batch_number, 'quantity': used}
+                for batch, used in taken
+            ],
+        })
+
 
 class MedicineViewSet(ScopedViewSet):
     queryset = Medicine.objects.all()
@@ -176,6 +198,45 @@ class BillViewSet(ScopedViewSet):
         if role == User.Role.PATIENT:
             return queryset.filter(patient__user=user)
         return queryset
+
+    @extend_schema(request=PaymentSerializer, responses=BillSerializer)
+    @action(detail=True, methods=['post'])
+    def pay(self, request, pk=None):
+        bill = self.get_object()
+        serializer = PaymentSerializer(data={**request.data, 'bill': bill.pk})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(received_by=request.user)
+
+        bill.refresh_from_db()
+        if bill.balance <= 0:
+            bill.paid = True
+            bill.save(update_fields=['paid'])
+
+        return Response(BillSerializer(bill).data)
+
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
+    @action(detail=True, methods=['get'])
+    def invoice(self, request, pk=None):
+        bill = self.get_object()
+        html = render_to_string('billing/invoice.html', {'bill': bill})
+        response = HttpResponse(html, content_type='text/html')
+        response['Content-Disposition'] = f'inline; filename="{bill.invoice_number}.html"'
+        return response
+
+
+class NotificationViewSet(mixins.ListModelMixin, mixins.UpdateModelMixin,
+                          viewsets.GenericViewSet):
+    serializer_class = NotificationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+    @extend_schema(request=None, responses=dict)
+    @action(detail=False, methods=['post'], url_path='mark-all-read')
+    def mark_all_read(self, request):
+        updated = self.get_queryset().filter(is_read=False).update(is_read=True)
+        return Response({'marked_read': updated})
 
 
 class DashboardView(APIView):
