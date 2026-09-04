@@ -74,27 +74,43 @@ class PrescriptionMedicineSerializer(serializers.ModelSerializer):
 
 class PrescriptionSerializer(serializers.ModelSerializer):
     medicines = PrescriptionMedicineSerializer(many=True, write_only=True)
-    
-    prescription_medicines = serializers.SerializerMethodField(read_only=True)
+    prescription_medicines = PrescriptionMedicineSerializer(source='items', many=True, read_only=True)
 
     class Meta:
         model = Prescription
         fields = ['id', 'appointment', 'diagnosis', 'notes', 'created_at', 'medicines', 'prescription_medicines']
         read_only_fields = ['created_at']
 
-    def get_prescription_medicines(self, obj):
-        medicines = PrescriptionMedicine.objects.filter(prescription=obj)
-        return PrescriptionMedicineSerializer(medicines, many=True).data
+    def validate_appointment(self, appointment):
+        user = self.context['request'].user
+        if user.role == User.Role.DOCTOR and appointment.doctor.user_id != user.id:
+            raise serializers.ValidationError(
+                'You can only write prescriptions for your own appointments.'
+            )
+        return appointment
 
     def create(self, validated_data):
         medicines_data = validated_data.pop('medicines')
-        
         prescription = Prescription.objects.create(**validated_data)
-        
-        for medicine_data in medicines_data:
-            PrescriptionMedicine.objects.create(prescription=prescription, **medicine_data)
-            
+        self._write_items(prescription, medicines_data)
         return prescription
+
+    def update(self, instance, validated_data):
+        medicines_data = validated_data.pop('medicines', None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+
+        if medicines_data is not None:
+            instance.items.all().delete()
+            self._write_items(instance, medicines_data)
+        return instance
+
+    def _write_items(self, prescription, medicines_data):
+        PrescriptionMedicine.objects.bulk_create([
+            PrescriptionMedicine(prescription=prescription, **item)
+            for item in medicines_data
+        ])
 
 class BillSerializer(serializers.ModelSerializer):
     class Meta:

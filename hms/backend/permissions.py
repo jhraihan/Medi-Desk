@@ -1,52 +1,72 @@
-from rest_framework.permissions import SAFE_METHODS, BasePermission
+from rest_framework.permissions import BasePermission
+
+from .models import User
+
 
 def role_of(user):
     if not user or not user.is_authenticated:
         return None
-
-
     if user.is_superuser:
-        return 'admin'
-
-    return getattr(user, 'role', 'patient')
-
-
-class IsAdmin(BasePermission):
-
-    message = "Only an admin can perform this action."
-
-    def has_permission(self, request, view):
-        return role_of(request.user) == 'admin'
+        return User.Role.ADMIN
+    return getattr(user, 'role', None) or User.Role.PATIENT
 
 
-class RoleWritePermission(BasePermission):
+class RolePermission(BasePermission):
+    """
+    Base for the role rules. Unlike the usual DRF pattern, reads are checked too —
+    letting every authenticated user read meant any patient could pull the whole
+    medical registry.
+    """
 
-    roles_that_may_write = ()
-    message = "Your role does not allow this change."
+    read_roles = ()
+    write_roles = ()
+    message = 'Your role does not allow this action.'
 
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
+        role = role_of(request.user)
+        if role is None:
             return False
-
-        if request.method in SAFE_METHODS:
-            return True
-
-        return role_of(request.user) in self.roles_that_may_write
+        if request.method in ('GET', 'HEAD', 'OPTIONS'):
+            return role in self.read_roles
+        return role in self.write_roles
 
 
-class AdminOrReceptionistWrites(RoleWritePermission):
-
-    roles_that_may_write = ('admin', 'receptionist')
-    message = "Only an admin or receptionist can modify these records."
-
-
-class DoctorWrites(RoleWritePermission):
-
-    roles_that_may_write = ('admin', 'doctor')
-    message = "Only a doctor can issue or modify prescriptions."
+class IsAdmin(RolePermission):
+    read_roles = (User.Role.ADMIN,)
+    write_roles = (User.Role.ADMIN,)
+    message = 'Only an admin can perform this action.'
 
 
-class AppointmentWrites(RoleWritePermission):
+class DepartmentAccess(RolePermission):
+    read_roles = tuple(User.Role.values)
+    write_roles = (User.Role.ADMIN,)
 
-    roles_that_may_write = ('admin', 'receptionist', 'patient', 'doctor')
-    message = "You do not have permission to modify appointments."
+
+class DoctorAccess(RolePermission):
+    read_roles = tuple(User.Role.values)
+    write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST)
+
+
+class PatientAccess(RolePermission):
+    read_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.DOCTOR, User.Role.PATIENT)
+    write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.PATIENT)
+
+
+class AppointmentAccess(RolePermission):
+    read_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.DOCTOR, User.Role.PATIENT)
+    write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.DOCTOR, User.Role.PATIENT)
+
+
+class PrescriptionAccess(RolePermission):
+    read_roles = (User.Role.ADMIN, User.Role.DOCTOR, User.Role.PATIENT, User.Role.PHARMACIST)
+    write_roles = (User.Role.ADMIN, User.Role.DOCTOR)
+
+
+class MedicineAccess(RolePermission):
+    read_roles = (User.Role.ADMIN, User.Role.DOCTOR, User.Role.RECEPTIONIST, User.Role.PHARMACIST)
+    write_roles = (User.Role.ADMIN, User.Role.PHARMACIST)
+
+
+class BillAccess(RolePermission):
+    read_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.PATIENT)
+    write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST)
