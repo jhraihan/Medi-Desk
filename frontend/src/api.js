@@ -77,6 +77,11 @@ export async function register(userData) {
   return response.data;
 }
 
+export async function fetchDashboard() {
+  const response = await API.get("dashboard/");
+  return response.data;
+}
+
 export async function fetchMe() {
   const response = await API.get("auth/me/");
   return response.data;
@@ -122,6 +127,13 @@ function createCrudApi(resourcePath) {
       return response.data;
     },
   };
+}
+
+export async function fetchAvailableSlots(doctorId, day) {
+  const response = await API.get(`doctors/${doctorId}/available-slots/`, {
+    params: { date: day },
+  });
+  return response.data;
 }
 
 export const departmentsApi = createCrudApi("departments");

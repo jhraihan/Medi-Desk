@@ -3,6 +3,7 @@ from .models import (
     Appointment, Bill, BillItem, Department, Doctor, Medicine, Patient,
     Payment, Prescription, PrescriptionMedicine, User,
 )
+from django.utils import timezone
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
 
@@ -71,6 +72,35 @@ class AppointmentSerializer(serializers.ModelSerializer):
         model = Appointment
         fields = '__all__'
         read_only_fields = ['created_at']
+        # The model constraint drives DRF to add a unique-together validator whose
+        # message is generic and lands on non_field_errors. validate() below reports
+        # the clash against the date field instead, which is what the UI needs.
+        validators = []
+
+    def validate_appointment_date(self, when):
+        if when < timezone.now():
+            raise serializers.ValidationError('Appointments cannot be booked in the past.')
+        return when
+
+    def validate(self, attrs):
+        doctor = attrs.get('doctor') or getattr(self.instance, 'doctor', None)
+        when = attrs.get('appointment_date') or getattr(self.instance, 'appointment_date', None)
+
+        if doctor and not doctor.is_available:
+            raise serializers.ValidationError({'doctor': 'This doctor is not accepting appointments.'})
+
+        if doctor and when:
+            clash = Appointment.objects.filter(
+                doctor=doctor, appointment_date=when
+            ).exclude(status='cancelled')
+            if self.instance:
+                clash = clash.exclude(pk=self.instance.pk)
+            if clash.exists():
+                raise serializers.ValidationError(
+                    {'appointment_date': 'That slot is already booked for this doctor.'}
+                )
+
+        return attrs
 
 class MedicineSerializer(serializers.ModelSerializer):
     class Meta:

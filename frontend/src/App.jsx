@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 import Layout from "./components/Layout";
 import { AuthProvider, ProtectedRoute, RoleRoute } from "./auth.jsx";
+import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Appointments from "./pages/Appointments";
@@ -17,8 +18,8 @@ function NotFound() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-slate-50">
       <h1 className="text-2xl font-bold text-slate-800">Page not found</h1>
-      <Link to="/appointments" className="text-sm text-indigo-600 hover:underline">
-        Back to appointments
+      <Link to="/dashboard" className="text-sm text-indigo-600 hover:underline">
+        Back to dashboard
       </Link>
     </div>
   );
@@ -50,7 +51,8 @@ function App() {
                 <Route path="/billing" element={<Billing />} />
               </Route>
 
-              <Route index element={<Navigate to="/appointments" replace />} />
+              <Route path="/dashboard" element={<Dashboard />} />
+              <Route index element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>
 

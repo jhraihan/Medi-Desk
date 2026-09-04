@@ -3,6 +3,7 @@ import { LogOut } from "lucide-react";
 import { useAuth } from "../auth-context.js";
 
 const NAV = [
+  { to: "/dashboard", label: "Dashboard" },
   { to: "/appointments", label: "Appointments" },
   { to: "/prescriptions", label: "Prescriptions" },
   { to: "/doctors", label: "Doctors" },

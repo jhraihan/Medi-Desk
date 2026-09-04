@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 
 from django.db import IntegrityError
 from django.utils import timezone
@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from decimal import Decimal
 
-from .models import AuditLog, Appointment, Bill, Doctor, Patient, Payment, User
+from .models import AuditLog, Appointment, Bill, Doctor, DoctorSchedule, Patient, Payment, User
 
 
 def make_user(username, role, **extra):
@@ -209,3 +209,76 @@ class ModelRuleTests(ScopingTests):
             entry.save()
         with self.assertRaises(ValueError):
             entry.delete()
+
+
+class BookingApiTests(ScopingTests):
+    def test_booking_a_taken_slot_is_rejected(self):
+        self.client.force_authenticate(self.alice)
+        response = self.client.post('/api/v1/appointments/', {
+            'patient': self.alice_patient.id,
+            'doctor': self.doctor.id,
+            'appointment_date': self.alice_appt.appointment_date.isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('appointment_date', response.data)
+
+    def test_cannot_book_in_the_past(self):
+        self.client.force_authenticate(self.alice)
+        response = self.client.post('/api/v1/appointments/', {
+            'patient': self.alice_patient.id,
+            'doctor': self.doctor.id,
+            'appointment_date': (timezone.now() - timezone.timedelta(days=1)).isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_book_an_unavailable_doctor(self):
+        self.doctor.is_available = False
+        self.doctor.save()
+
+        self.client.force_authenticate(self.alice)
+        response = self.client.post('/api/v1/appointments/', {
+            'patient': self.alice_patient.id,
+            'doctor': self.doctor.id,
+            'appointment_date': (timezone.now() + timezone.timedelta(days=5)).isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_available_slots_needs_a_date(self):
+        self.client.force_authenticate(self.alice)
+        response = self.client.get(f'/api/v1/doctors/{self.doctor.id}/available-slots/')
+        self.assertEqual(response.status_code, 400)
+
+    def test_available_slots_excludes_booked_times(self):
+        DoctorSchedule.objects.create(
+            doctor=self.doctor,
+            weekday=self.alice_appt.appointment_date.weekday(),
+            start_time=time(9, 0), end_time=time(17, 0))
+
+        self.client.force_authenticate(self.alice)
+        day = self.alice_appt.appointment_date.date().isoformat()
+        response = self.client.get(
+            f'/api/v1/doctors/{self.doctor.id}/available-slots/?date={day}')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn(self.alice_appt.appointment_date.isoformat(), response.data['slots'])
+
+
+class DashboardTests(ScopingTests):
+    def test_each_role_gets_its_own_shape(self):
+        self.client.force_authenticate(self.alice)
+        patient_view = self.client.get('/api/v1/dashboard/')
+        self.assertEqual(patient_view.status_code, 200)
+        self.assertEqual(patient_view.data['role'], 'patient')
+        self.assertIn('outstanding_balance', patient_view.data)
+
+        self.client.force_authenticate(self.doctor_user)
+        doctor_view = self.client.get('/api/v1/dashboard/')
+        self.assertIn('today_appointments', doctor_view.data)
+        self.assertNotIn('revenue_this_month', doctor_view.data)
+
+        self.client.force_authenticate(make_user('boss4', User.Role.ADMIN))
+        admin_view = self.client.get('/api/v1/dashboard/')
+        self.assertIn('revenue_this_month', admin_view.data)
+
+    def test_dashboard_requires_login(self):
+        self.assertEqual(self.client.get('/api/v1/dashboard/').status_code, 401)

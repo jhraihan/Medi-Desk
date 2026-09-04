@@ -24,7 +24,7 @@ export default function Login() {
       localStorage.setItem("refresh_token", data.refresh);
 
       setUser(await fetchMe());
-      navigate("/appointments", { replace: true });
+      navigate("/dashboard", { replace: true });
     } catch (problem) {
       const errorMsg =
         problem.response?.data?.detail || "Invalid username or password.";

@@ -12,6 +12,7 @@ from .views import (
     DepartmentViewSet,
     DoctorViewSet,
     MedicineViewSet,
+    DashboardView,
     MeView,
     PatientViewSet,
     PrescriptionViewSet,
@@ -33,6 +34,7 @@ urlpatterns = [
     path('logout/', TokenBlacklistView.as_view(), name='logout'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', MeView.as_view(), name='me'),
+    path('dashboard/', DashboardView.as_view(), name='dashboard'),
 
     path('', include(router.urls)),
 ]

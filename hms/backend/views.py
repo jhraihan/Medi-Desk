@@ -1,13 +1,17 @@
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, viewsets
+from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import Appointment, Bill, Department, Doctor, Medicine, Patient, Prescription
+from .services import available_slots, dashboard_for
 from .permissions import (
     AppointmentAccess,
     BillAccess,
@@ -90,6 +94,20 @@ class DoctorViewSet(ScopedViewSet):
     search_fields = ['user__first_name', 'user__last_name', 'specialization']
     ordering_fields = ['experience', 'user__first_name']
 
+    @extend_schema(responses=dict)
+    @action(detail=True, methods=['get'], url_path='available-slots')
+    def available_slots(self, request, pk=None):
+        raw_date = request.query_params.get('date')
+        if not raw_date:
+            return Response({'detail': 'A date query parameter is required.'}, status=400)
+        try:
+            day = date.fromisoformat(raw_date)
+        except ValueError:
+            return Response({'detail': 'Use YYYY-MM-DD for the date.'}, status=400)
+
+        slots = available_slots(self.get_object(), day)
+        return Response({'date': raw_date, 'slots': slots})
+
 
 class PatientViewSet(ScopedViewSet):
     queryset = Patient.objects.select_related('user')
@@ -158,3 +176,12 @@ class BillViewSet(ScopedViewSet):
         if role == User.Role.PATIENT:
             return queryset.filter(patient__user=user)
         return queryset
+
+
+class DashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        role = role_of(request.user)
+        return Response({'role': role, **dashboard_for(request.user, role)})
