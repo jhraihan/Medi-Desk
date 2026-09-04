@@ -102,7 +102,15 @@ export async function logout() {
 
 function createCrudApi(resourcePath) {
   return {
+    // The API is paginated, so a list response is {count, next, previous, results}.
+    // Callers want the rows, so unwrap here rather than at every call site.
     list: async (params) => {
+      const response = await API.get(`${resourcePath}/`, { params });
+      return response.data?.results ?? response.data;
+    },
+
+    // For paging or showing a total, when the envelope itself is needed.
+    listPage: async (params) => {
       const response = await API.get(`${resourcePath}/`, { params });
       return response.data;
     },
@@ -157,7 +165,7 @@ export async function openInvoice(id) {
 
 export async function fetchNotifications() {
   const response = await API.get("notifications/");
-  return response.data;
+  return response.data?.results ?? response.data;
 }
 
 export async function markNotificationsRead() {

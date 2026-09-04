@@ -157,7 +157,7 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    'TITLE': 'Hospital Management System API',
+    'TITLE': 'MediDesk API',
     'DESCRIPTION': 'Patients, appointments, prescriptions, pharmacy and billing.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,

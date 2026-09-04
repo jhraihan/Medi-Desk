@@ -39,7 +39,7 @@ export default function Login() {
       <div className="w-full max-w-sm rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-6 flex items-center gap-2">
           <h1 className="text-xl font-bold text-indigo-600">
-            Hospital Admin Login
+            Sign in to MediDesk
           </h1>
         </div>
 

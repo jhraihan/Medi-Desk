@@ -54,7 +54,7 @@ export default function Register() {
             Create an Account
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Register to access the Hospital System.
+            Create a patient account to book and track your care.
           </p>
         </div>
 

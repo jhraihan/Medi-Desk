@@ -27,7 +27,7 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-slate-50">
       <aside className="flex w-64 flex-col border-r border-slate-200 bg-white px-4 py-6">
-        <h1 className="mb-8 text-xl font-bold text-indigo-600">Hospital Admin</h1>
+        <h1 className="mb-8 text-xl font-bold text-indigo-600">MediDesk</h1>
 
         <nav className="flex flex-1 flex-col gap-2">
           {links.map((item) => (

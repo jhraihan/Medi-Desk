@@ -19,6 +19,10 @@ from .models import (
     User,
 )
 
+admin.site.site_header = 'MediDesk administration'
+admin.site.site_title = 'MediDesk'
+admin.site.index_title = 'Hospital operations'
+
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
