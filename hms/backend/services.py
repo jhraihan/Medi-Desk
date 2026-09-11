@@ -206,3 +206,74 @@ def bill_for_appointment(appointment, actor=None):
         unit_price=appointment.doctor.consultation_fee,
     )
     return bill
+
+
+def queue_for_doctor(doctor, day=None):
+    day = day or timezone.localdate()
+    return (
+        Appointment.objects
+        .filter(doctor=doctor, appointment_date__date=day, checked_in_at__isnull=False)
+        .filter(status__in=Appointment.WAITING_STATUSES)
+        .select_related('patient__user')
+        .order_by('checked_in_at')
+    )
+
+
+def queue_position(appointment):
+    if not appointment.checked_in_at:
+        return None
+    if appointment.status not in Appointment.WAITING_STATUSES:
+        return None
+
+    ahead = (
+        queue_for_doctor(appointment.doctor, appointment.appointment_date.date())
+        .filter(checked_in_at__lt=appointment.checked_in_at)
+        .count()
+    )
+    return ahead + 1
+
+
+def queue_state(appointment):
+    doctor = appointment.doctor
+    position = queue_position(appointment)
+
+    if position is None:
+        return {
+            'position': None,
+            'people_ahead': None,
+            'estimated_wait_minutes': None,
+            'is_next': False,
+            'doctor_status': doctor.clinic_status,
+            'doctor_status_note': doctor.status_note,
+            'status': appointment.status,
+        }
+
+    ahead = position - 1
+    return {
+        'position': position,
+        'people_ahead': ahead,
+        'estimated_wait_minutes': ahead * doctor.average_consult_minutes,
+        'is_next': ahead == 0,
+        'doctor_status': doctor.clinic_status,
+        'doctor_status_note': doctor.status_note,
+        'status': appointment.status,
+    }
+
+
+def refresh_average_consult_time(doctor):
+    recent = (
+        Appointment.objects
+        .filter(doctor=doctor, status='completed',
+                started_at__isnull=False, completed_at__isnull=False)
+        .order_by('-completed_at')[:20]
+    )
+
+    lengths = []
+    for appointment in recent:
+        minutes = (appointment.completed_at - appointment.started_at).total_seconds() / 60
+        if 0 < minutes < 180:
+            lengths.append(minutes)
+
+    if lengths:
+        doctor.average_consult_minutes = max(5, round(sum(lengths) / len(lengths)))
+        doctor.save(update_fields=['average_consult_minutes'])

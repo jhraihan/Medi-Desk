@@ -1,10 +1,12 @@
 const looks = {
   primary:
-    "inline-flex items-center gap-2 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700",
+    "bg-brand-600 text-white shadow-sm hover:bg-brand-700 active:scale-[0.98]",
   secondary:
-    "inline-flex items-center gap-2 rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50",
+    "border border-white/70 bg-white/70 text-ink-700 backdrop-blur hover:bg-white active:scale-[0.98]",
+  ghost:
+    "text-brand-700 hover:bg-brand-50 active:scale-[0.98]",
   danger:
-    "inline-flex items-center gap-2 rounded-md bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700",
+    "bg-rose-600 text-white shadow-sm hover:bg-rose-700 active:scale-[0.98]",
 };
 
 export default function Button({
@@ -14,8 +16,11 @@ export default function Button({
   children,
   ...rest
 }) {
+  const base =
+    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-60 disabled:active:scale-100";
+
   return (
-    <button type={type} className={looks[variant] + " " + className} {...rest}>
+    <button type={type} className={`${base} ${looks[variant]} ${className}`} {...rest}>
       {children}
     </button>
   );

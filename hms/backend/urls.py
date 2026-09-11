@@ -11,9 +11,11 @@ from .views import (
     BillViewSet,
     DashboardView,
     DepartmentViewSet,
+    DoctorQueueView,
     DoctorViewSet,
     MedicineViewSet,
     MeView,
+    MyQueueView,
     NotificationViewSet,
     PatientViewSet,
     PrescriptionViewSet,
@@ -37,6 +39,8 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', MeView.as_view(), name='me'),
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
+    path('queue/me/', MyQueueView.as_view(), name='my-queue'),
+    path('queue/doctor/<int:doctor_id>/', DoctorQueueView.as_view(), name='doctor-queue'),
 
     path('', include(router.urls)),
 ]

@@ -1,8 +1,12 @@
-export default function PageHeader({ title, subtitle }) {
+export default function PageHeader({ eyebrow, title, subtitle, action }) {
   return (
-    <>
-      <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-      <p className="mt-1 mb-6 text-sm text-slate-500">{subtitle}</p>
-    </>
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3 animate-rise">
+      <div>
+        {eyebrow && <span className="pill bg-brand-100 text-brand-700">{eyebrow}</span>}
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink-900">{title}</h1>
+        {subtitle && <p className="mt-1 text-sm text-ink-500">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
   );
 }

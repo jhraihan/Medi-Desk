@@ -1,12 +1,13 @@
 export default function Alert({ children, variant = "danger" }) {
   if (!children) return null;
+
   const styles =
     variant === "success"
-      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-      : "border-red-200 bg-red-50 text-red-800";
+      ? "border-emerald-200/80 bg-emerald-50/80 text-emerald-800"
+      : "border-rose-200/80 bg-rose-50/80 text-rose-800";
 
   return (
-    <div className={`mb-4 rounded-md border p-3 text-sm font-medium ${styles}`}>
+    <div className={`animate-fade mb-4 rounded-xl border p-3 text-sm font-medium backdrop-blur ${styles}`}>
       {children}
     </div>
   );

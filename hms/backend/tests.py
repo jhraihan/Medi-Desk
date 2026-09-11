@@ -20,6 +20,7 @@ from .models import (
     PrescriptionMedicine,
     User,
 )
+from .services import queue_position, queue_state
 
 
 def make_user(username, role, **extra):
@@ -423,3 +424,130 @@ class NotificationApiTests(ScopingTests):
         response = self.client.post('/api/v1/notifications/mark-all-read/')
         self.assertEqual(response.data['marked_read'], 2)
         self.assertFalse(Notification.objects.filter(recipient=self.alice, is_read=False).exists())
+
+
+class QueueTests(APITestCase):
+    def setUp(self):
+        self.doctor_user = make_user('queuedoc', User.Role.DOCTOR)
+        self.doctor = Doctor.objects.create(
+            user=self.doctor_user, specialization='GP',
+            phone='0200000009', experience=4, average_consult_minutes=10)
+
+        self.reception = make_user('desk', User.Role.RECEPTIONIST)
+        self.patients = []
+        for name in ['pa', 'pb', 'pc']:
+            user = make_user(name, User.Role.PATIENT)
+            self.patients.append(Patient.objects.create(
+                user=user, date_of_birth=date(1990, 1, 1), gender='male',
+                blood_group='O+', address='x', phone='0100000000'))
+
+    def _appointment(self, patient, hour):
+        when = timezone.now().replace(hour=hour, minute=0, second=0, microsecond=0)
+        if when < timezone.now():
+            when = when + timedelta(days=0)
+        return Appointment.objects.create(
+            patient=patient, doctor=self.doctor,
+            appointment_date=when, status='approved')
+
+    def test_checking_in_gives_sequential_positions(self):
+        appointments = [self._appointment(p, 9 + i) for i, p in enumerate(self.patients)]
+        self.client.force_authenticate(self.reception)
+
+        for appointment in appointments:
+            response = self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
+            self.assertEqual(response.status_code, 200)
+
+        for expected, appointment in enumerate(appointments, start=1):
+            appointment.refresh_from_db()
+            self.assertEqual(queue_position(appointment), expected)
+
+    def test_completing_moves_the_queue_up(self):
+        appointments = [self._appointment(p, 9 + i) for i, p in enumerate(self.patients)]
+        self.client.force_authenticate(self.reception)
+        for appointment in appointments:
+            self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
+
+        self.client.post(f'/api/v1/appointments/{appointments[0].id}/complete/')
+
+        appointments[1].refresh_from_db()
+        self.assertEqual(queue_position(appointments[1]), 1)
+
+    def test_estimated_wait_uses_average_consult_time(self):
+        appointments = [self._appointment(p, 9 + i) for i, p in enumerate(self.patients)]
+        self.client.force_authenticate(self.reception)
+        for appointment in appointments:
+            self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
+
+        appointments[2].refresh_from_db()
+        state = queue_state(appointments[2])
+        self.assertEqual(state['people_ahead'], 2)
+        self.assertEqual(state['estimated_wait_minutes'], 20)
+        self.assertFalse(state['is_next'])
+
+    def test_first_in_line_is_next(self):
+        appointment = self._appointment(self.patients[0], 9)
+        self.client.force_authenticate(self.reception)
+        self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
+
+        appointment.refresh_from_db()
+        self.assertTrue(queue_state(appointment)['is_next'])
+
+    def test_cannot_check_in_on_another_day(self):
+        future = timezone.now() + timedelta(days=3)
+        appointment = Appointment.objects.create(
+            patient=self.patients[0], doctor=self.doctor,
+            appointment_date=future, status='approved')
+
+        self.client.force_authenticate(self.reception)
+        response = self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
+        self.assertEqual(response.status_code, 400)
+
+    def test_cannot_start_before_check_in(self):
+        appointment = self._appointment(self.patients[0], 9)
+        self.client.force_authenticate(self.reception)
+        response = self.client.post(f'/api/v1/appointments/{appointment.id}/start/')
+        self.assertEqual(response.status_code, 400)
+
+    def test_patient_sees_own_queue_position(self):
+        appointment = self._appointment(self.patients[0], 9)
+        self.client.force_authenticate(self.reception)
+        self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
+
+        self.client.force_authenticate(self.patients[0].user)
+        response = self.client.get('/api/v1/queue/me/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['position'], 1)
+
+    def test_patient_cannot_read_a_doctor_queue(self):
+        self.client.force_authenticate(self.patients[0].user)
+        response = self.client.get(f'/api/v1/queue/doctor/{self.doctor.id}/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_doctor_reads_own_queue_only(self):
+        other_user = make_user('otherdoc2', User.Role.DOCTOR)
+        other = Doctor.objects.create(
+            user=other_user, specialization='ENT', phone='0200000010', experience=2)
+
+        self.client.force_authenticate(self.doctor_user)
+        self.assertEqual(
+            self.client.get(f'/api/v1/queue/doctor/{self.doctor.id}/').status_code, 200)
+        self.assertEqual(
+            self.client.get(f'/api/v1/queue/doctor/{other.id}/').status_code, 404)
+
+    def test_doctor_can_set_clinic_status(self):
+        self.client.force_authenticate(make_user('bossq', User.Role.ADMIN))
+        response = self.client.patch(
+            f'/api/v1/doctors/{self.doctor.id}/availability/',
+            {'clinic_status': 'running_late', 'status_note': 'About 20 minutes'},
+            format='json')
+
+        self.assertEqual(response.status_code, 200)
+        self.doctor.refresh_from_db()
+        self.assertEqual(self.doctor.clinic_status, 'running_late')
+
+    def test_unknown_clinic_status_is_rejected(self):
+        self.client.force_authenticate(make_user('bossq2', User.Role.ADMIN))
+        response = self.client.patch(
+            f'/api/v1/doctors/{self.doctor.id}/availability/',
+            {'clinic_status': 'on_holiday'}, format='json')
+        self.assertEqual(response.status_code, 400)

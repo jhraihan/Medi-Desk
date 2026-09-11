@@ -47,9 +47,9 @@ export default function Doctors() {
       <Alert>{error}</Alert>
       <Alert variant="success">{notice}</Alert>
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="animate-fade">
         <div className="border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">
+          <h2 className="font-semibold text-ink-900">
             {isLoading ? "Loading..." : `${doctors.length} Doctors`}
           </h2>
         </div>
@@ -68,18 +68,18 @@ export default function Doctors() {
           {doctors.map((doc) => (
             <tr
               key={doc.id}
-              className="border-b border-slate-100 hover:bg-slate-50"
+              className="transition-colors duration-150 hover:bg-white/60"
             >
-              <td className="px-3 py-2 text-slate-700">{doc.id}</td>
-              <td className="px-3 py-2 text-slate-700">
+              <td className="px-4 py-3 text-ink-700">{doc.id}</td>
+              <td className="px-4 py-3 text-ink-700">
                 {doc.user_details?.first_name} {doc.user_details?.last_name}
               </td>
-              <td className="px-3 py-2 text-slate-700">{doc.specialization}</td>
-              <td className="px-3 py-2 text-slate-700">
+              <td className="px-4 py-3 text-ink-700">{doc.specialization}</td>
+              <td className="px-4 py-3 text-ink-700">
                 {doc.experience} years
               </td>
-              <td className="px-3 py-2 text-slate-700">{doc.phone}</td>
-              <td className="px-3 py-2">
+              <td className="px-4 py-3 text-ink-700">{doc.phone}</td>
+              <td className="px-4 py-3">
                 <span
                   className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
                     doc.is_available
@@ -90,10 +90,10 @@ export default function Doctors() {
                   {doc.is_available ? "Available" : "Off-duty"}
                 </span>
               </td>
-              <td className="px-3 py-2">
+              <td className="px-4 py-3">
                 <button
                   onClick={() => toggleAvailability(doc.id, doc.is_available)}
-                  className="text-xs font-medium text-indigo-600 hover:underline"
+                  className="text-xs font-medium text-brand-700 hover:underline"
                 >
                   Toggle
                 </button>

@@ -80,10 +80,10 @@ export default function Patients() {
       {formIsOpen && (
         <form
           onSubmit={handleSave}
-          className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+          className="animate-rise glass-strong mb-5 rounded-2xl p-5"
         >
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-800">
+            <h2 className="font-semibold text-ink-900">
               Add Patient Details
             </h2>
             <IconButton onClick={() => setFormIsOpen(false)}>
@@ -153,9 +153,9 @@ export default function Patients() {
         </form>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">
+      <div className="animate-fade">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold text-ink-900">
             {isLoading ? "Loading..." : `${patients.length} Patients`}
           </h2>
           <Button onClick={() => setFormIsOpen(true)}>
@@ -169,16 +169,16 @@ export default function Patients() {
           {patients.map((pat) => (
             <tr
               key={pat.id}
-              className="border-b border-slate-100 hover:bg-slate-50"
+              className="transition-colors duration-150 hover:bg-white/60"
             >
-              <td className="px-3 py-2 text-slate-700">{pat.id}</td>
-              <td className="px-3 py-2 text-slate-700">
+              <td className="px-4 py-3 text-ink-700">{pat.id}</td>
+              <td className="px-4 py-3 text-ink-700">
                 {pat.user_details?.first_name} {pat.user_details?.last_name}
               </td>
-              <td className="px-3 py-2 text-slate-700">{pat.age ?? "—"}</td>
-              <td className="px-3 py-2 text-slate-700">{pat.gender}</td>
-              <td className="px-3 py-2 text-slate-700">{pat.blood_group}</td>
-              <td className="px-3 py-2 text-slate-700">{pat.phone}</td>
+              <td className="px-4 py-3 text-ink-700">{pat.age ?? "—"}</td>
+              <td className="px-4 py-3 text-ink-700">{pat.gender}</td>
+              <td className="px-4 py-3 text-ink-700">{pat.blood_group}</td>
+              <td className="px-4 py-3 text-ink-700">{pat.phone}</td>
             </tr>
           ))}
         </Table>

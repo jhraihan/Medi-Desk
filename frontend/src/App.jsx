@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 import Layout from "./components/Layout";
 import { AuthProvider, ProtectedRoute, RoleRoute } from "./auth.jsx";
 import Dashboard from "./pages/Dashboard";
+import MyQueue from "./pages/MyQueue";
+import Queue from "./pages/Queue";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Appointments from "./pages/Appointments";
@@ -52,6 +54,11 @@ function App() {
               </Route>
 
               <Route path="/dashboard" element={<Dashboard />} />
+              <Route path="/my-queue" element={<MyQueue />} />
+
+              <Route element={<RoleRoute allow={[...STAFF, "doctor"]} />}>
+                <Route path="/queue" element={<Queue />} />
+              </Route>
               <Route index element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Route>

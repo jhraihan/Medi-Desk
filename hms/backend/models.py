@@ -20,7 +20,6 @@ class User(AbstractUser):
         RECEPTIONIST = 'receptionist', 'Receptionist'
         PHARMACIST = 'pharmacist', 'Pharmacist'
 
-    # Kept for backwards compatibility with existing references.
     ROLE_CHOICES = Role.choices
 
     role = models.CharField(
@@ -45,6 +44,12 @@ class Department(models.Model):
         return self.name
 
 class Doctor(models.Model):
+    class ClinicStatus(models.TextChoices):
+        IN_CLINIC = 'in_clinic', 'In clinic'
+        ON_BREAK = 'on_break', 'On a break'
+        RUNNING_LATE = 'running_late', 'Running late'
+        UNAVAILABLE = 'unavailable', 'Unavailable today'
+
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='doctor')
     department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, related_name='doctors')
     specialization = models.CharField(max_length=255)
@@ -55,6 +60,10 @@ class Doctor(models.Model):
     phone = models.CharField(max_length=20, validators=[PHONE_VALIDATOR])
     experience = models.PositiveIntegerField()
     is_available = models.BooleanField(default=True)
+    clinic_status = models.CharField(
+        max_length=20, choices=ClinicStatus.choices, default=ClinicStatus.IN_CLINIC)
+    status_note = models.CharField(max_length=120, blank=True)
+    average_consult_minutes = models.PositiveIntegerField(default=15)
 
     class Meta:
         ordering = ['user__first_name', 'user__username']
@@ -98,7 +107,6 @@ class Patient(models.Model):
 
     @property
     def age(self):
-        """Derived from date_of_birth — a stored age is wrong the day after it's saved."""
         if not self.date_of_birth:
             return None
         today = date.today()
@@ -114,9 +122,12 @@ class Appointment(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),
         ('approved', 'Approved'),
+        ('checked_in', 'Checked in'),
+        ('in_consultation', 'In consultation'),
         ('completed', 'Completed'),
         ('cancelled', 'Cancelled'),
     ]
+    WAITING_STATUSES = ['approved', 'checked_in', 'in_consultation']
     patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='appointments')
     doctor = models.ForeignKey(Doctor, on_delete=models.CASCADE, related_name='appointments')
     appointment_date = models.DateTimeField(db_index=True)
@@ -125,6 +136,13 @@ class Appointment(models.Model):
     duration_minutes = models.PositiveIntegerField(default=30)
     cancelled_reason = models.CharField(max_length=255, blank=True)
     checked_in_at = models.DateTimeField(null=True, blank=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    consultation_type = models.CharField(
+        max_length=20,
+        choices=[('in_person', 'In person'), ('online', 'Online')],
+        default='in_person')
+    meeting_link = models.URLField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

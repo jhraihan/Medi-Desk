@@ -1,16 +1,28 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { appointmentsApi, doctorsApi, patientsApi } from "../api.js";
+import { appointmentsApi, checkInAppointment, doctorsApi, patientsApi } from "../api.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
+  Badge,
   Button,
+  Card,
   IconButton,
   Input,
   PageHeader,
   Select,
   Table,
 } from "../components/index.js";
+
+const STATUS_TONES = {
+  pending: "warning",
+  approved: "success",
+  checked_in: "brand",
+  in_consultation: "brand",
+  completed: "neutral",
+  cancelled: "danger",
+};
+
 
 export default function Appointments() {
   const [appointments, setAppointments] = useState([]);
@@ -86,6 +98,16 @@ export default function Appointments() {
     }
   }
 
+  async function handleCheckIn(id) {
+    try {
+      await checkInAppointment(id);
+      setNotice("Patient checked in and added to the queue.");
+      reload();
+    } catch (err) {
+      setError(err.response?.data?.detail || "Could not check this patient in.");
+    }
+  }
+
   async function updateStatus(id, newStatus) {
     try {
       await appointmentsApi.patch(id, { status: newStatus });
@@ -99,15 +121,21 @@ export default function Appointments() {
   return (
     <div>
       <PageHeader
+        eyebrow="Scheduling"
         title="Appointments"
-        subtitle="Manage and filter hospital bookings."
+        subtitle="Book, check in and track every visit."
+        action={
+          <Button onClick={() => setFormIsOpen(true)}>
+            <Plus size={15} /> Book appointment
+          </Button>
+        }
       />
 
       <Alert>{error}</Alert>
       <Alert variant="success">{notice}</Alert>
 
       {/* Filter Section */}
-      <div className="mb-6 grid gap-3 rounded-lg border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-3">
+      <Card className="animate-rise mb-5 grid gap-3 p-5 sm:grid-cols-3">
         <Select
           label="Filter by Doctor"
           placeholder="All Doctors"
@@ -141,17 +169,12 @@ export default function Appointments() {
           value={filterDate}
           onChange={(e) => setFilterDate(e.target.value)}
         />
-      </div>
+      </Card>
 
       {formIsOpen && (
-        <form
-          onSubmit={handleCreate}
-          className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-        >
+        <Card as="form" tone="strong" onSubmit={handleCreate} className="animate-rise mb-5 p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-800">
-              Book Appointment
-            </h2>
+            <h2 className="font-semibold text-ink-900">Book an appointment</h2>
             <IconButton onClick={() => setFormIsOpen(false)}>
               <X size={16} />
             </IconButton>
@@ -213,75 +236,58 @@ export default function Appointments() {
               Cancel
             </Button>
           </div>
-        </form>
+        </Card>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">
-            {isLoading ? "Loading..." : `${appointments.length} Appointments`}
-          </h2>
-          <Button onClick={() => setFormIsOpen(true)}>
-            <Plus size={14} /> Book Appointment
-          </Button>
-        </div>
+      <p className="mb-3 text-sm text-ink-500">
+        {isLoading ? "Loading…" : `${appointments.length} appointments`}
+      </p>
 
+      <div className="animate-fade">
         <Table
-          columns={["ID", "Patient", "Doctor", "Date", "Status", "Actions"]}
+          columns={["Patient", "Doctor", "Date", "Status", "Actions"]}
         >
           {appointments.map((apt) => (
-            <tr
-              key={apt.id}
-              className="border-b border-slate-100 hover:bg-slate-50"
-            >
-              <td className="px-3 py-2 text-slate-700">{apt.id}</td>
-              <td className="px-3 py-2 text-slate-700">
-                Patient #{apt.patient}
+            <tr key={apt.id} className="transition-colors duration-150 hover:bg-white/60">
+              <td className="px-4 py-3 font-medium text-ink-900">
+                {apt.patient_name ?? `Patient #${apt.patient}`}
               </td>
-              <td className="px-3 py-2 text-slate-700">Doctor #{apt.doctor}</td>
-              <td className="px-3 py-2 text-slate-700">
+              <td className="px-4 py-3 text-ink-700">
+                {apt.doctor_name ?? `Doctor #${apt.doctor}`}
+              </td>
+              <td className="px-4 py-3 text-ink-700">
                 {new Date(apt.appointment_date).toLocaleString()}
               </td>
-              <td className="px-3 py-2">
-                <span
-                  className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    apt.status === "approved"
-                      ? "bg-emerald-100 text-emerald-700"
-                      : apt.status === "cancelled"
-                        ? "bg-red-100 text-red-700"
-                        : apt.status === "completed"
-                          ? "bg-indigo-100 text-indigo-700"
-                          : "bg-amber-100 text-amber-700"
-                  }`}
-                >
-                  {apt.status}
-                </span>
+              <td className="px-4 py-3">
+                <Badge tone={STATUS_TONES[apt.status] ?? "neutral"}>
+                  {apt.status.replaceAll("_", " ")}
+                </Badge>
               </td>
-              <td className="px-3 py-2">
-                <div className="flex gap-2">
+              <td className="px-4 py-3">
+                <div className="flex flex-wrap gap-3">
                   {apt.status === "pending" && (
                     <button
                       onClick={() => updateStatus(apt.id, "approved")}
-                      className="text-xs font-medium text-emerald-600 hover:underline"
+                      className="text-xs font-medium text-emerald-700 hover:underline"
                     >
                       Approve
                     </button>
                   )}
-                  {apt.status !== "completed" && apt.status !== "cancelled" && (
-                    <>
-                      <button
-                        onClick={() => updateStatus(apt.id, "completed")}
-                        className="text-xs font-medium text-indigo-600 hover:underline"
-                      >
-                        Complete
-                      </button>
-                      <button
-                        onClick={() => updateStatus(apt.id, "cancelled")}
-                        className="text-xs font-medium text-red-600 hover:underline"
-                      >
-                        Cancel
-                      </button>
-                    </>
+                  {["pending", "approved"].includes(apt.status) && (
+                    <button
+                      onClick={() => handleCheckIn(apt.id)}
+                      className="text-xs font-medium text-brand-700 hover:underline"
+                    >
+                      Check in
+                    </button>
+                  )}
+                  {!["completed", "cancelled"].includes(apt.status) && (
+                    <button
+                      onClick={() => updateStatus(apt.id, "cancelled")}
+                      className="text-xs font-medium text-rose-600 hover:underline"
+                    >
+                      Cancel
+                    </button>
                   )}
                 </div>
               </td>

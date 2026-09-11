@@ -60,7 +60,12 @@ class DoctorSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Doctor
-        fields = ['id', 'user', 'user_details', 'department', 'specialization', 'phone', 'experience', 'is_available']
+        fields = [
+            'id', 'user', 'user_details', 'department', 'specialization', 'phone',
+            'experience', 'is_available', 'clinic_status', 'status_note',
+            'consultation_fee', 'qualification', 'average_consult_minutes',
+        ]
+        read_only_fields = ['average_consult_minutes']
 
 class PatientSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
@@ -77,10 +82,13 @@ class PatientSerializer(serializers.ModelSerializer):
         read_only_fields = ['medical_record_number']
 
 class AppointmentSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source='patient.__str__', read_only=True)
+    doctor_name = serializers.CharField(source='doctor.__str__', read_only=True)
+
     class Meta:
         model = Appointment
         fields = '__all__'
-        read_only_fields = ['created_at']
+        read_only_fields = ['created_at', 'checked_in_at', 'started_at', 'completed_at']
         # The model constraint drives DRF to add a unique-together validator whose
         # message is generic and lands on non_field_errors. validate() below reports
         # the clash against the date field instead, which is what the UI needs.

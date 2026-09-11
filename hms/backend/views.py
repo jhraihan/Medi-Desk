@@ -3,6 +3,7 @@ from datetime import date
 from django.contrib.auth import get_user_model
 from django.http import HttpResponse
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
@@ -38,7 +39,15 @@ from .serializers import (
     RegisterSerializer,
     UserSerializer,
 )
-from .services import DispenseError, available_slots, dashboard_for, dispense_prescription
+from .services import (
+    DispenseError,
+    available_slots,
+    dashboard_for,
+    dispense_prescription,
+    queue_for_doctor,
+    queue_state,
+    refresh_average_consult_time,
+)
 
 User = get_user_model()
 
@@ -100,6 +109,20 @@ class DoctorViewSet(ScopedViewSet):
     search_fields = ['user__first_name', 'user__last_name', 'specialization']
     ordering_fields = ['experience', 'user__first_name']
 
+    @extend_schema(request=None, responses=DoctorSerializer)
+    @action(detail=True, methods=['patch'])
+    def availability(self, request, pk=None):
+        doctor = self.get_object()
+        status_value = request.data.get('clinic_status')
+
+        if status_value not in Doctor.ClinicStatus.values:
+            return Response({'detail': 'Unknown clinic status.'}, status=400)
+
+        doctor.clinic_status = status_value
+        doctor.status_note = request.data.get('status_note', '')
+        doctor.save(update_fields=['clinic_status', 'status_note'])
+        return Response(DoctorSerializer(doctor).data)
+
     @extend_schema(responses=dict)
     @action(detail=True, methods=['get'], url_path='available-slots')
     def available_slots(self, request, pk=None):
@@ -144,6 +167,49 @@ class AppointmentViewSet(ScopedViewSet):
         if role == User.Role.DOCTOR:
             return queryset.filter(doctor__user=user)
         return queryset
+
+    @extend_schema(request=None, responses=AppointmentSerializer)
+    @action(detail=True, methods=['post'], url_path='check-in')
+    def check_in(self, request, pk=None):
+        appointment = self.get_object()
+
+        if appointment.status not in ['pending', 'approved']:
+            return Response({'detail': 'This appointment cannot be checked in.'}, status=400)
+        if appointment.appointment_date.date() != timezone.localdate():
+            return Response({'detail': 'You can only check in on the day of your appointment.'},
+                            status=400)
+
+        appointment.checked_in_at = timezone.now()
+        appointment.status = 'checked_in'
+        appointment.save(update_fields=['checked_in_at', 'status'])
+        return Response(AppointmentSerializer(appointment).data)
+
+    @extend_schema(request=None, responses=AppointmentSerializer)
+    @action(detail=True, methods=['post'])
+    def start(self, request, pk=None):
+        appointment = self.get_object()
+
+        if appointment.status != 'checked_in':
+            return Response({'detail': 'Only a checked-in patient can be seen.'}, status=400)
+
+        appointment.started_at = timezone.now()
+        appointment.status = 'in_consultation'
+        appointment.save(update_fields=['started_at', 'status'])
+        return Response(AppointmentSerializer(appointment).data)
+
+    @extend_schema(request=None, responses=AppointmentSerializer)
+    @action(detail=True, methods=['post'])
+    def complete(self, request, pk=None):
+        appointment = self.get_object()
+
+        if appointment.status not in ['checked_in', 'in_consultation']:
+            return Response({'detail': 'This appointment is not in progress.'}, status=400)
+
+        appointment.completed_at = timezone.now()
+        appointment.status = 'completed'
+        appointment.save(update_fields=['completed_at', 'status'])
+        refresh_average_consult_time(appointment.doctor)
+        return Response(AppointmentSerializer(appointment).data)
 
 
 class PrescriptionViewSet(ScopedViewSet):
@@ -249,3 +315,67 @@ class DashboardView(APIView):
     def get(self, request):
         role = role_of(request.user)
         return Response({'role': role, **dashboard_for(request.user, role)})
+
+
+class MyQueueView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        patient = getattr(request.user, 'patient', None)
+        if not patient:
+            return Response({'detail': 'Only patients have a queue position.'}, status=400)
+
+        appointment = (
+            Appointment.objects
+            .filter(patient=patient, appointment_date__date=timezone.localdate())
+            .filter(status__in=Appointment.WAITING_STATUSES + ['pending'])
+            .select_related('doctor__user')
+            .order_by('appointment_date')
+            .first()
+        )
+
+        if not appointment:
+            return Response({'appointment': None})
+
+        return Response({
+            'appointment': AppointmentSerializer(appointment).data,
+            'doctor_name': str(appointment.doctor),
+            **queue_state(appointment),
+        })
+
+
+class DoctorQueueView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses=dict)
+    def get(self, request, doctor_id):
+        role = role_of(request.user)
+        doctor = Doctor.objects.filter(pk=doctor_id).select_related('user').first()
+
+        if not doctor:
+            return Response({'detail': 'Not found.'}, status=404)
+        if role == User.Role.DOCTOR and doctor.user_id != request.user.id:
+            return Response({'detail': 'Not found.'}, status=404)
+        if role == User.Role.PATIENT:
+            return Response({'detail': 'Not found.'}, status=404)
+
+        waiting = queue_for_doctor(doctor)
+        return Response({
+            'doctor': str(doctor),
+            'clinic_status': doctor.clinic_status,
+            'status_note': doctor.status_note,
+            'average_consult_minutes': doctor.average_consult_minutes,
+            'waiting': [
+                {
+                    'position': index + 1,
+                    'appointment_id': appointment.id,
+                    'patient_name': str(appointment.patient),
+                    'patient_id': appointment.patient_id,
+                    'reason': appointment.reason,
+                    'status': appointment.status,
+                    'checked_in_at': appointment.checked_in_at,
+                }
+                for index, appointment in enumerate(waiting)
+            ],
+        })

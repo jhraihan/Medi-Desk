@@ -97,10 +97,10 @@ export default function Billing() {
       {formIsOpen && (
         <form
           onSubmit={handleCreate}
-          className="mb-6 rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+          className="animate-rise glass-strong mb-5 rounded-2xl p-5"
         >
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-800">
+            <h2 className="font-semibold text-ink-900">
               Generate New Bill
             </h2>
             <IconButton onClick={() => setFormIsOpen(false)}>
@@ -144,9 +144,9 @@ export default function Billing() {
         </form>
       )}
 
-      <div className="rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-          <h2 className="text-sm font-semibold text-slate-800">
+      <div className="animate-fade">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-semibold text-ink-900">
             {isLoading ? "Loading..." : `${bills.length} Invoices`}
           </h2>
           <Button onClick={() => setFormIsOpen(true)}>
@@ -167,13 +167,13 @@ export default function Billing() {
           {bills.map((bill) => (
             <tr
               key={bill.id}
-              className="border-b border-slate-100 hover:bg-slate-50"
+              className="transition-colors duration-150 hover:bg-white/60"
             >
-              <td className="px-3 py-2 text-slate-700">{bill.id}</td>
-              <td className="px-3 py-2 text-slate-700">
+              <td className="px-4 py-3 text-ink-700">{bill.id}</td>
+              <td className="px-4 py-3 text-ink-700">
                 Patient #{bill.patient}
               </td>
-              <td className="px-3 py-2 font-medium text-slate-900">
+              <td className="px-4 py-3 font-medium text-ink-900">
                 ${bill.total ?? bill.amount}
                 {bill.balance != null && Number(bill.balance) > 0 && (
                   <span className="ml-1 text-xs font-normal text-rose-600">
@@ -181,7 +181,7 @@ export default function Billing() {
                   </span>
                 )}
               </td>
-              <td className="px-3 py-2">
+              <td className="px-4 py-3">
                 <span
                   className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
                     bill.paid
@@ -192,22 +192,22 @@ export default function Billing() {
                   {bill.paid ? "Paid" : "Unpaid"}
                 </span>
               </td>
-              <td className="px-3 py-2 text-slate-700">
+              <td className="px-4 py-3 text-ink-700">
                 {new Date(bill.created_at).toLocaleDateString()}
               </td>
-              <td className="px-3 py-2">
+              <td className="px-4 py-3">
                 <div className="flex gap-3">
                   {!bill.paid && (
                     <button
                       onClick={() => settle(bill)}
-                      className="text-xs font-medium text-indigo-600 hover:underline"
+                      className="text-xs font-medium text-brand-700 hover:underline"
                     >
                       Record payment
                     </button>
                   )}
                   <button
                     onClick={() => openInvoice(bill.id)}
-                    className="text-xs font-medium text-slate-600 hover:underline"
+                    className="text-xs font-medium text-ink-500 hover:underline"
                   >
                     Invoice
                   </button>

@@ -173,6 +173,39 @@ export async function markNotificationsRead() {
   return response.data;
 }
 
+export async function fetchMyQueue() {
+  const response = await API.get("queue/me/");
+  return response.data;
+}
+
+export async function fetchDoctorQueue(doctorId) {
+  const response = await API.get(`queue/doctor/${doctorId}/`);
+  return response.data;
+}
+
+export async function checkInAppointment(id) {
+  const response = await API.post(`appointments/${id}/check-in/`);
+  return response.data;
+}
+
+export async function startAppointment(id) {
+  const response = await API.post(`appointments/${id}/start/`);
+  return response.data;
+}
+
+export async function completeAppointment(id) {
+  const response = await API.post(`appointments/${id}/complete/`);
+  return response.data;
+}
+
+export async function setClinicStatus(doctorId, clinicStatus, statusNote = "") {
+  const response = await API.patch(`doctors/${doctorId}/availability/`, {
+    clinic_status: clinicStatus,
+    status_note: statusNote,
+  });
+  return response.data;
+}
+
 export const departmentsApi = createCrudApi("departments");
 export const doctorsApi = createCrudApi("doctors");
 export const patientsApi = createCrudApi("patients");
