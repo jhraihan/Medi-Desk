@@ -1,0 +1,855 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MediDesk — PRD v3.0</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 10.8pt; line-height: 1.62; color: #22272f; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  h1, h2, h3, h4 { color: #10243f; line-height: 1.3; margin: 0; }
+  h2 { font-size: 17pt; margin: 30px 0 4px; letter-spacing: -.3px;
+       page-break-after: avoid; position: relative; padding-bottom: 9px; }
+  h2::after { content: ""; position: absolute; left: 0; bottom: 0;
+              width: 54px; height: 3px; background: #0d7a72; border-radius: 2px; }
+  h2 .num { color: #0d7a72; font-weight: 700; margin-right: 8px; }
+  h2 + .lede { color: #5d6b7f; margin: 14px 0 16px; font-size: 10.4pt; }
+  h3 { font-size: 12.4pt; margin: 22px 0 8px; color: #0d7a72; page-break-after: avoid; }
+  h4 { font-size: 11pt; margin: 16px 0 5px; page-break-after: avoid; }
+
+  p { margin: 0 0 11px; }
+  ul, ol { margin: 0 0 12px; padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  strong { color: #10243f; }
+
+  code { font-family: "Courier New", monospace; font-size: 9.4pt;
+         background: #eef3f8; padding: 1px 5px; border-radius: 3px; color: #0a4f6b; }
+  pre.code { font-family: "Courier New", monospace; font-size: 9pt; line-height: 1.5;
+             background: #12263c; color: #e7eef7; border-radius: 6px; padding: 12px 14px;
+             margin: 10px 0 14px; white-space: pre-wrap; page-break-inside: avoid; }
+  pre.code .c { color: #8fa8c4; }
+
+  table { width: 100%; border-collapse: collapse; margin: 12px 0 18px; font-size: 9.8pt; }
+  th { background: #10243f; color: #fff; text-align: left; padding: 9px 10px;
+       font-weight: 600; font-size: 9.4pt; }
+  td { padding: 9px 10px; border-bottom: 1px solid #dfe6ef; vertical-align: top; line-height: 1.5; }
+  tr { page-break-inside: avoid; }
+  tbody tr:nth-child(even) { background: #f7f9fc; }
+
+  .tag { display: inline-block; padding: 2px 9px; border-radius: 11px;
+         font-size: 8.4pt; font-weight: 700; color: #fff; white-space: nowrap; }
+  .t-new { background: #0d7a72; } .t-ext { background: #0a5ea8; }
+  .t-p0 { background: #b3123c; } .t-p1 { background: #c9590a; } .t-p2 { background: #a97c04; }
+
+  .brandbar { display: flex; align-items: center; gap: 11px; margin-bottom: 18px; }
+  .brandmark { width: 40px; height: 40px; flex: 0 0 40px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect x="1.5" y="1.5" width="37" height="37" rx="9" fill="none" stroke="%230d7a72" stroke-width="2.4"/><path d="M16 8h8v8h8v8h-8v8h-8v-8H8v-8h8z" fill="%230d7a72" opacity="0.13"/><path d="M6 20h5.4l2.3-5.6 3.4 10.2 3.1-8 2.4 5.1 2.2-2.6H34" fill="none" stroke="%230d7a72" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-repeat: no-repeat; background-size: 40px 40px; }
+  .brandtext { font-size: 12.6pt; font-weight: 700; color: #0d7a72;
+               letter-spacing: 2.2px; text-transform: uppercase; }
+
+  .cover { padding: 8mm 0 14mm; border-bottom: 3px solid #0d7a72; margin-bottom: 6mm; }
+  .cover .kick { font-size: 9.4pt; letter-spacing: 2.6px; text-transform: uppercase;
+                 color: #0d7a72; font-weight: 700; }
+  .cover h1 { font-size: 30pt; margin: 10px 0 4px; letter-spacing: -1px; }
+  .cover .sub { font-size: 13.4pt; color: #5d6b7f; font-weight: 300; }
+  .cover dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px;
+              margin: 22px 0 0; font-size: 10pt; }
+  .cover dt { color: #6b7a90; font-weight: 600; }
+  .cover dd { margin: 0; }
+
+  .box { border-left: 4px solid #0d7a72; background: #f2f8f8; padding: 12px 16px;
+         margin: 14px 0 18px; page-break-inside: avoid; }
+  .box.warn { border-left-color: #b3123c; background: #fdf4f6; }
+  .box > :last-child { margin-bottom: 0; }
+  .box h4 { margin-top: 0; }
+
+  .feature { border: 1px solid #dbe3ed; border-left: 4px solid #0d7a72; border-radius: 5px;
+             padding: 13px 16px; margin: 0 0 14px; page-break-inside: avoid; background: #fff; }
+  .feature .hd { font-size: 11.6pt; font-weight: 700; color: #10243f; margin-bottom: 6px; }
+  .feature .why { color: #5d6b7f; font-style: italic; margin-bottom: 9px; }
+
+  .story { background: #f7f9fc; border-radius: 4px; padding: 9px 13px; margin: 9px 0;
+           page-break-inside: avoid; }
+  .story .sid { font-weight: 700; color: #0d7a72; font-size: 9.2pt; letter-spacing: .4px; }
+  .story ul { margin: 5px 0 0; font-size: 9.8pt; }
+
+  .brk { page-break-before: always; }
+  .foot { margin-top: 30px; padding-top: 10px; border-top: 1px solid #dfe6ef;
+          font-size: 9pt; color: #8a97a8; text-align: center; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 0 26px; }
+  .chk { list-style: none; padding-left: 0; }
+  .chk li { padding-left: 24px; position: relative; }
+  .chk li::before { content: ""; position: absolute; left: 0; top: 4px;
+                    width: 12px; height: 12px; border: 1.6px solid #9aa9bb; border-radius: 3px; }
+  .toc div { padding: 3px 0; border-bottom: 1px dotted #ccd5e0; font-size: 10pt; }
+  .toc span { color: #0d7a72; font-weight: 700; display: inline-block; width: 26px; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <div class="brandbar"><span class="brandmark"></span><span class="brandtext">MediDesk</span></div>
+  <div class="kick">Product Requirements Document</div>
+  <h1>MediDesk v3.0</h1>
+  <div class="sub">From hospital admin tool to a patient-facing health platform</div>
+  <dl>
+    <dt>Prepared for</dt><dd>jhraihan — this is your build plan</dd>
+    <dt>Date</dt><dd>11 September 2026</dd>
+    <dt>Builds on</dt><dd>v2.0, branch <code>hms-hardening</code> (8 commits, 95 tests passing)</dd>
+    <dt>Stack</dt><dd>Django 6.1 · DRF · React 19 · Tailwind 4 · React Query · Postgres · Redis · Celery · Channels</dd>
+    <dt>Scope</dt><dd>4 new features, role-specific interfaces, no AI</dd>
+    <dt>Effort</dt><dd>≈ 7–9 weeks solo, in 5 phases</dd>
+  </dl>
+</div>
+
+<h2>Contents</h2>
+<div class="toc">
+  <div><span>1</span> What this is and why</div>
+  <div><span>2</span> What v2.0 already gives you</div>
+  <div><span>3</span> Scope decisions — what's in, what's out, and why</div>
+  <div><span>4</span> Role-specific interfaces (the structural change)</div>
+  <div><span>5</span> Feature A — Smart Queue &amp; Waiting Time</div>
+  <div><span>6</span> Feature B — Digital Medical Records</div>
+  <div><span>7</span> Feature C — Blood Donor Network</div>
+  <div><span>8</span> Feature D — Medicine Reminders</div>
+  <div><span>9</span> Data model changes</div>
+  <div><span>10</span> Technical architecture</div>
+  <div><span>11</span> Non-functional requirements</div>
+  <div><span>12</span> Build order</div>
+  <div><span>13</span> Risks</div>
+  <div><span>14</span> Appendix — dependencies and definition of done</div>
+</div>
+
+<h2 class="brk"><span class="num">1</span>What this is and why</h2>
+<p class="lede">v2.0 made the system safe. v3.0 makes it useful to patients.</p>
+
+<p>
+MediDesk today is a competent hospital administration tool. Staff can manage patients, book
+appointments, write prescriptions, dispense medicine and take payments. What it cannot do is
+solve any of the problems a patient in Bangladesh actually walks in with.
+</p>
+<p>
+This document specifies four features that change that, each chosen because it addresses a real
+and common frustration, and because it is genuinely finishable with the stack you already know.
+</p>
+
+<table>
+  <tr><th style="width:210px">The problem</th><th>What v3.0 does about it</th></tr>
+  <tr><td><strong>Long, unpredictable waits.</strong> Patients travel far, then sit for hours with
+      no idea when they will be seen, or whether the doctor turned up at all.</td>
+      <td><strong>A live queue.</strong> Your position, an estimated wait in minutes, and the
+      doctor's real availability — updating on screen without a refresh.</td></tr>
+  <tr><td><strong>Lost paper records.</strong> Patients carry envelopes of old reports between
+      hospitals, and lose them.</td>
+      <td><strong>A personal record vault.</strong> Upload prescriptions and test reports, keep
+      them forever, and share a specific report with a specific doctor for a limited time.</td></tr>
+  <tr><td><strong>Blood emergencies.</strong> Finding a matching donor at 2am means phoning
+      everyone you know.</td>
+      <td><strong>A donor network.</strong> Post an urgent request; every compatible, available,
+      nearby donor is notified at once.</td></tr>
+  <tr><td><strong>Missed medication.</strong> Elderly patients forget doses and follow-ups, and
+      nobody notices until they get worse.</td>
+      <td><strong>Reminders that escalate.</strong> Scheduled doses, a one-tap "taken", and a
+      nudge to a family member when doses are repeatedly missed.</td></tr>
+</table>
+
+<div class="box">
+  <h4>The honest summary</h4>
+  <p>
+    Two of these — the queue and the reminders — are mostly assembly work on models you already
+    have. The records vault and the donor network are genuinely new, and the donor network is the
+    only one that carries real safety and privacy weight. Plan accordingly.
+  </p>
+</div>
+
+<h2><span class="num">2</span>What v2.0 already gives you</h2>
+<p class="lede">Worth knowing, because it determines how much of v3.0 is new work rather than wiring.</p>
+
+<table>
+  <tr><th style="width:200px">Already built</th><th>What v3.0 reuses it for</th></tr>
+  <tr><td><code>Appointment</code> with <code>checked_in_at</code> and a status flow</td>
+      <td>The queue is an ordering over checked-in appointments — the field already exists.</td></tr>
+  <tr><td><code>DoctorSchedule</code> and <code>/available-slots/</code></td>
+      <td>Doctor availability and booking are done. v3.0 adds the live status on top.</td></tr>
+  <tr><td><code>Prescription</code> and <code>PrescriptionMedicine</code></td>
+      <td>Reminder schedules are generated from a prescription's existing lines.</td></tr>
+  <tr><td><code>Notification</code> model and endpoint</td>
+      <td>Every alert in v3.0 writes here first; SMS and email are extra channels, not replacements.</td></tr>
+  <tr><td><code>Patient.blood_group</code> with real choices</td>
+      <td>Donor matching uses the enum that already exists.</td></tr>
+  <tr><td>Record-level authorisation on every endpoint</td>
+      <td>New endpoints inherit scoping through <code>ScopedViewSet</code> rather than reinventing it.</td></tr>
+  <tr><td>Audit log, append-only</td>
+      <td>Record sharing and donor contact both get logged with no new infrastructure.</td></tr>
+</table>
+
+<h2 class="brk"><span class="num">3</span>Scope decisions</h2>
+<p class="lede">You proposed eight ideas. Four are in. Here is the reasoning for all eight, including the ones I recommend dropping.</p>
+
+<h3>3.1 In scope</h3>
+<table>
+  <tr><th style="width:30px">#</th><th style="width:190px">Feature</th><th style="width:60px">Effort</th><th>Why it earns a place</th></tr>
+  <tr><td>1</td><td><strong>Smart queue &amp; waiting time</strong></td><td>Medium</td>
+      <td>The single most-felt problem, and you are most of the way there already —
+      <code>checked_in_at</code>, schedules and slot booking all exist.</td></tr>
+  <tr><td>3</td><td><strong>Digital medical records</strong></td><td>Medium</td>
+      <td>Pure value to the patient, no external data needed, and it makes every other feature
+      stickier because the patient now has a reason to keep the account.</td></tr>
+  <tr><td>4</td><td><strong>Blood donor network</strong></td><td>Medium</td>
+      <td>High impact, self-contained, and the matching logic is simple. The hard parts are
+      privacy and consent, not code.</td></tr>
+  <tr><td>5</td><td><strong>Medicine reminders</strong></td><td>Low</td>
+      <td>Cheapest of the four. Celery Beat plus the existing prescription lines gets you most of
+      the way; the family-escalation rule is the genuinely novel bit.</td></tr>
+</table>
+
+<h3>3.2 Out of scope, and why</h3>
+<table>
+  <tr><th style="width:30px">#</th><th style="width:190px">Feature</th><th>Why not now</th></tr>
+  <tr><td>2</td><td>Medicine verification</td>
+      <td><strong>The safety one.</strong> Verifying a batch number only means something if you
+      hold the manufacturer's real batch data. Without it the app would return "looks fine" for a
+      counterfeit box — worse than not checking at all, because it manufactures false confidence
+      about medicine someone is about to swallow. Revisit only with a genuine data source
+      (DGDA or a manufacturer feed).</td></tr>
+  <tr><td>6</td><td>Price comparison</td>
+      <td>Genuinely valuable for Bangladesh, but it needs current prices from many hospitals and
+      labs. That is a data-collection and data-freshness problem, not a coding one, and stale
+      prices make it useless. A good v4 once you have partners.</td></tr>
+  <tr><td>7</td><td>Mental health platform</td>
+      <td>Needs verified professionals, crisis-escalation paths and a duty-of-care policy. It is a
+      product in its own right, and doing it badly in a corner of a hospital admin tool would be
+      worse than not doing it.</td></tr>
+  <tr><td>8</td><td>Hospital bed / ICU availability</td>
+      <td>Only meaningful across many hospitals, each reporting live bed counts. Single-hospital
+      MediDesk cannot produce the data. Strong candidate once multi-hospital support exists.</td></tr>
+</table>
+
+<div class="box warn">
+  <h4>On feature 2 specifically</h4>
+  <p>
+    I want to be direct because this one is different in kind. The other three exclusions are
+    about effort and data. Medicine verification is about harm: a verification screen that cannot
+    actually verify is not a neutral placeholder, it is a false assurance attached to a decision
+    about someone's health. Build it when you have the data, not before.
+  </p>
+</div>
+
+<h3>3.3 Explicitly not doing</h3>
+<ul>
+  <li><strong>No AI or ML anywhere.</strong> You asked for this and the whole document respects it —
+      every feature is deterministic logic you can read and debug.</li>
+  <li>No native mobile apps; the React app will be responsive instead.</li>
+  <li>No payment gateway integration; billing continues to record payments, not process cards.</li>
+  <li>No multi-hospital tenancy — which is precisely why features 6 and 8 are deferred.</li>
+</ul>
+
+<h2 class="brk"><span class="num">4</span>Role-specific interfaces</h2>
+<p class="lede">The structural change. Everything in section 5 onward depends on this landing first.</p>
+
+<p>
+Today MediDesk has <strong>one interface</strong> shared by everyone. Roles only change which
+sidebar links appear, which dashboard numbers load, and which rows the API returns. A doctor and a
+receptionist see the identical Appointments table, even though they need entirely different things
+from it: a doctor wants today's queue and a consult button, a receptionist wants to check people in
+and take payments.
+</p>
+<p>
+That was the right call for an admin tool. It breaks down the moment patients are real users,
+because a patient should never see a staff table at all.
+</p>
+
+<h3>4.1 What each role gets</h3>
+<table>
+  <tr><th style="width:110px">Role</th><th style="width:150px">Lands on</th><th>Their interface is built around</th></tr>
+  <tr><td><strong>Patient</strong></td><td>My Health</td>
+      <td>Next appointment with live queue position, my records, my reminders for today, my bills,
+      donor status. No tables of other people. Mobile-first — most will be on a phone.</td></tr>
+  <tr><td><strong>Doctor</strong></td><td>Today's Clinic</td>
+      <td>A vertical list of today's patients in queue order, with the current patient pinned at
+      the top, one click to open the consult view (history, allergies, prescribe, complete).</td></tr>
+  <tr><td><strong>Receptionist</strong></td><td>Front Desk</td>
+      <td>Check-in, queue management across all doctors, booking, and unpaid invoices. The
+      operational console.</td></tr>
+  <tr><td><strong>Pharmacist</strong></td><td>Pharmacy</td>
+      <td>Prescriptions waiting to dispense, stock levels, expiring batches. Already largely
+      exists; gets its own landing page.</td></tr>
+  <tr><td><strong>Admin</strong></td><td>Overview</td>
+      <td>The current dashboard, plus queue health across doctors and donor-network activity.</td></tr>
+</table>
+
+<div class="story">
+  <div class="sid">UI-1 · Split the shell by role</div>
+  <ul>
+    <li>Patients get a distinct layout — bottom navigation on mobile, no staff sidebar.</li>
+    <li>Staff keep the sidebar, but the nav is generated per role rather than filtered from one list.</li>
+    <li>Each role has its own landing route; login redirects there instead of everyone hitting
+        <code>/dashboard</code>.</li>
+    <li>Shared pieces stay shared — tables, forms, inputs — so there is one component library, not five.</li>
+    <li><strong>Done when</strong> logging in as each of the five roles lands somewhere purpose-built,
+        and a patient can reach no staff screen by typing a URL.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">UI-2 · Adopt React Query</div>
+  <ul>
+    <li>Every page currently hand-rolls <code>useEffect</code> fetching, with no caching, retry or
+        invalidation. The queue makes that untenable — it needs polling and refetch-on-focus.</li>
+    <li>Replace the fetching in all pages; mutations invalidate their queries.</li>
+    <li><strong>Done when</strong> no page component calls the API directly from <code>useEffect</code>.</li>
+  </ul>
+</div>
+
+<h2 class="brk"><span class="num">5</span>Feature A — Smart Queue &amp; Waiting Time</h2>
+<p><span class="tag t-p0">P0</span> &nbsp;<span class="tag t-ext">EXTENDS EXISTING</span></p>
+
+<div class="feature">
+  <div class="hd">The problem, concretely</div>
+  <div class="why">
+    A patient travels two hours to a clinic for a 10am appointment. The doctor is running late, or
+    is not coming at all. Nobody tells them. They wait four hours in a corridor, guessing.
+  </div>
+  <p>
+    The fix is not clever scheduling — it is <strong>honesty in real time</strong>: where you are in
+    the line, roughly how long that means, and whether the doctor is actually in.
+  </p>
+</div>
+
+<h3>5.1 How the queue works</h3>
+<p>
+A queue is not a new entity. It is an <em>ordering over appointments that have been checked in</em>,
+per doctor, per day. <code>Appointment.checked_in_at</code> already exists, which means position is
+derivable rather than stored:
+</p>
+
+<pre class="code"><span class="c"># position = how many checked-in, not-yet-seen patients are ahead of you today</span>
+ahead = (Appointment.objects
+    .filter(doctor=appt.doctor,
+            appointment_date__date=today,
+            checked_in_at__lt=appt.checked_in_at)
+    .exclude(status__in=['completed', 'cancelled'])
+    .count())
+
+position = ahead + 1
+estimated_wait = ahead * doctor.average_consult_minutes</pre>
+
+<p>
+<code>average_consult_minutes</code> starts at the doctor's <code>slot_duration_minutes</code> and is
+refined from that doctor's own recent completed consultations — a rolling average of the last 20.
+Plain arithmetic, no prediction model.
+</p>
+
+<div class="story">
+  <div class="sid">A-1 · Check-in creates a queue position</div>
+  <ul>
+    <li>Reception checks a patient in; <code>checked_in_at</code> is stamped and status becomes
+        <code>checked_in</code>.</li>
+    <li>A patient can self-check-in from their phone, but only within 30 minutes of their slot and
+        only if marked as arrived by reception — self-check-in from home would poison the queue.</li>
+    <li><code>GET /api/v1/queue/me/</code> returns position, estimated wait and the doctor's status.</li>
+    <li><strong>Done when</strong> checking in three patients gives positions 1, 2, 3, and completing
+        the first moves the others up.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">A-2 · Live updates without refreshing</div>
+  <ul>
+    <li>Django Channels over WebSockets; each doctor's queue is a group, and any change broadcasts
+        the new state to everyone watching.</li>
+    <li><strong>Polling is the fallback, not an afterthought</strong> — if the socket fails, React
+        Query polls every 30 seconds and the user sees no difference. Ship polling first, add
+        sockets second.</li>
+    <li>The patient screen shows position, estimated wait, and a clear "you are next" state.</li>
+    <li><strong>Done when</strong> completing a consultation on the doctor's screen moves every
+        waiting patient's position within two seconds, with no refresh.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">A-3 · Honest doctor availability</div>
+  <ul>
+    <li>A doctor sets themselves <em>in clinic</em>, <em>on a break</em>, <em>running late</em>
+        (with an estimate), or <em>unavailable today</em>.</li>
+    <li>Status is visible before booking and while waiting. Marking unavailable notifies every
+        patient booked that day, immediately.</li>
+    <li>Search by specialisation and department, filtered to doctors actually available.</li>
+    <li><strong>Done when</strong> a doctor marking themselves unavailable results in a notification
+        for every affected patient without any staff action.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">A-4 · Notifications that reach people</div>
+  <ul>
+    <li>In-app notification always; email where present; SMS through a Bangladeshi gateway
+        behind a provider interface so it can be swapped.</li>
+    <li>Triggers: booking confirmed, doctor delayed or cancelled, you are third in line, you are next.</li>
+    <li>All sending is a Celery task — a slow SMS gateway must never block a request.</li>
+    <li><strong>Done when</strong> SMS failure degrades to in-app only, with an error logged and no
+        user-visible breakage.</li>
+  </ul>
+</div>
+
+<div class="box">
+  <h4>Online consultation — deliberately minimal</h4>
+  <p>
+    You listed online consultation under this feature. v3.0 supports it as an
+    <strong>appointment type</strong> (in-person or online) that carries a meeting link the doctor
+    pastes in, plus a text consultation thread. Building video into the app is a large piece of work
+    with its own infrastructure; a link to an existing tool gets 90% of the value for 5% of the cost.
+  </p>
+</div>
+
+<h2 class="brk"><span class="num">6</span>Feature B — Digital Medical Records</h2>
+<p><span class="tag t-p1">P1</span> &nbsp;<span class="tag t-new">NEW</span></p>
+
+<div class="feature">
+  <div class="hd">The problem, concretely</div>
+  <div class="why">
+    A patient sees a new doctor and is asked what they were prescribed last year. They think it was
+    a white tablet. The report is in an envelope at home, or lost.
+  </div>
+  <p>
+    The patient owns the record. The hospital holds a copy. Sharing is explicit, time-limited and
+    revocable — never a blanket grant.
+  </p>
+</div>
+
+<div class="story">
+  <div class="sid">B-1 · Upload and keep documents</div>
+  <ul>
+    <li>Upload prescriptions, test reports, scans and discharge summaries. PDF, JPG and PNG,
+        maximum 10 MB.</li>
+    <li>Each document has a type, a date it relates to (not just upload date), the issuing doctor or
+        lab, and free-text notes.</li>
+    <li><strong>Validate by content, not by file extension</strong>, and serve uploads from a
+        non-executable path. An upload endpoint is the most commonly exploited part of an app.</li>
+    <li>Prescriptions written inside MediDesk appear in the timeline automatically — no upload needed.</li>
+    <li><strong>Done when</strong> a patient sees one chronological history combining uploaded
+        documents and MediDesk-generated records.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">B-2 · Sharing that the patient controls</div>
+  <ul>
+    <li>A patient grants a named doctor access to <em>selected</em> documents for a chosen window
+        (default 7 days), and can revoke early at any time.</li>
+    <li>Access is enforced in the queryset, so an expired or revoked share returns 404 like any
+        other out-of-scope row.</li>
+    <li>Every grant, view and revoke writes to the audit log.</li>
+    <li>The patient can see exactly who currently has access and what they viewed.</li>
+    <li><strong>Done when</strong> a doctor's access disappears the moment it expires, proven by a
+        test that travels past the expiry.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">B-3 · Family profiles</div>
+  <ul>
+    <li>An adult can manage dependants — children, or elderly parents — under their own account.</li>
+    <li>Dependants have records and reminders but no login of their own.</li>
+    <li>A dependant reaching 18 can be converted to an independent account, taking their records
+        with them.</li>
+    <li><strong>Done when</strong> a guardian can switch profiles and see only that dependant's data.</li>
+  </ul>
+</div>
+
+<h2><span class="num">7</span>Feature C — Blood Donor Network</h2>
+<p><span class="tag t-p1">P1</span> &nbsp;<span class="tag t-new">NEW</span></p>
+
+<div class="feature">
+  <div class="hd">The problem, concretely</div>
+  <div class="why">
+    A patient needs two bags of O− at midnight. The family starts phoning everyone they know, and
+    posting in Facebook groups, hoping someone matching is close enough to help.
+  </div>
+  <p>
+    The technical problem is easy — match blood group, filter by distance, notify. The real design
+    problem is <strong>protecting donors</strong> from exposure and from being pestered.
+  </p>
+</div>
+
+<h3>7.1 Compatibility is a rule, not a lookup</h3>
+<p>
+Matching must use real transfusion compatibility, not string equality. An O− request should reach
+only O− donors, but an AB+ request can accept every group. This table is the specification:
+</p>
+<table>
+  <tr><th>Recipient needs</th><th>Can receive from</th></tr>
+  <tr><td>O−</td><td>O−</td></tr>
+  <tr><td>O+</td><td>O−, O+</td></tr>
+  <tr><td>A−</td><td>O−, A−</td></tr>
+  <tr><td>A+</td><td>O−, O+, A−, A+</td></tr>
+  <tr><td>B−</td><td>O−, B−</td></tr>
+  <tr><td>B+</td><td>O−, O+, B−, B+</td></tr>
+  <tr><td>AB−</td><td>O−, A−, B−, AB−</td></tr>
+  <tr><td>AB+</td><td>all groups</td></tr>
+</table>
+
+<div class="story">
+  <div class="sid">C-1 · Donor profiles and consent</div>
+  <ul>
+    <li>Registering as a donor is <strong>opt-in and separate</strong> from having a MediDesk account.
+        Being a patient must never imply being a donor.</li>
+    <li>Donor holds blood group, area, contact preference and availability toggle.</li>
+    <li><strong>Automatic 90-day cooldown after a recorded donation</strong>, during which the donor
+        is not matched. This is a medical safety rule, not a convenience.</li>
+    <li>Donors can go invisible or delete their donor profile entirely, without touching their
+        patient account.</li>
+    <li><strong>Done when</strong> a donor who just donated stops appearing in searches for 90 days.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">C-2 · Requests and matching</div>
+  <ul>
+    <li>A request carries blood group, units, hospital, urgency and a needed-by time.</li>
+    <li>Matching applies the compatibility table above, then availability, then area, then cooldown.</li>
+    <li>Notifications go out in waves — nearest area first, widening if nobody responds within
+        30 minutes — so a routine request does not alert the entire city at once.</li>
+    <li>Donors respond yes or no; the requester sees a count of responders, never a donor list.</li>
+    <li><strong>Done when</strong> an AB+ request reaches every group and an O− request reaches only
+        O− donors, both proven by tests.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">C-3 · Contact details stay private until both agree</div>
+  <ul>
+    <li><strong>A donor's phone number is never in a list response.</strong> It is revealed only after
+        that donor accepts that specific request.</li>
+    <li>Requests are rate-limited per user, and staff can verify a request as hospital-confirmed.</li>
+    <li>Donors can report a request; repeated reports suspend the requester.</li>
+    <li>Every reveal is audited.</li>
+    <li><strong>Done when</strong> no API response anywhere exposes a donor's contact details before
+        that donor has accepted.</li>
+  </ul>
+</div>
+
+<div class="box warn">
+  <h4>Location: keep it simple</h4>
+  <p>
+    Use <strong>administrative areas</strong> (district and thana), not GPS coordinates. A dropdown
+    of areas gives you matching that is good enough, needs no PostGIS, no map bills, and no
+    continuous tracking of where donors physically are. Precise location on a donor list is a
+    safety problem, not a feature.
+  </p>
+</div>
+
+<h2 class="brk"><span class="num">8</span>Feature D — Medicine Reminders</h2>
+<p><span class="tag t-p2">P2</span> &nbsp;<span class="tag t-ext">EXTENDS EXISTING</span></p>
+
+<div class="feature">
+  <div class="hd">The problem, concretely</div>
+  <div class="why">
+    An elderly patient is given four medicines with different schedules. Some doses are missed, some
+    doubled. The family finds out weeks later, at the follow-up, when things have got worse.
+  </div>
+</div>
+
+<div class="story">
+  <div class="sid">D-1 · Schedules from prescriptions</div>
+  <ul>
+    <li>A prescription line already carries dosage, frequency and duration. Generate a schedule from
+        it with one click rather than retyping.</li>
+    <li>Patients can also add a medicine manually, for anything prescribed elsewhere.</li>
+    <li>Each dose is a row with a due time and a taken/missed/skipped state.</li>
+    <li><strong>Done when</strong> a 7-day twice-daily prescription produces 14 dose rows at the
+        right times.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">D-2 · Reminders and adherence</div>
+  <ul>
+    <li>Celery Beat sweeps every 15 minutes and sends what is due — batched, never one task per dose.</li>
+    <li>One tap marks a dose taken. Missing the window marks it missed automatically.</li>
+    <li>A simple adherence percentage per medicine and overall, plus a follow-up reminder when a
+        prescription has a follow-up date.</li>
+    <li><strong>Done when</strong> a dose left unconfirmed past its window is marked missed without
+        anyone doing anything.</li>
+  </ul>
+</div>
+
+<div class="story">
+  <div class="sid">D-3 · Family escalation</div>
+  <ul>
+    <li>A patient nominates a family contact and chooses the trigger — for example three missed
+        doses of the same medicine in a week.</li>
+    <li><strong>The patient consents to this explicitly and can turn it off.</strong> Reporting an
+        adult's behaviour to a relative without their agreement is surveillance, however
+        well-intentioned.</li>
+    <li>For dependant profiles, the guardian is notified by default.</li>
+    <li><strong>Done when</strong> the third miss notifies the nominated contact, and disabling the
+        setting stops it.</li>
+  </ul>
+</div>
+
+<h2 class="brk"><span class="num">9</span>Data model changes</h2>
+<p class="lede">Fifteen models exist today. v3.0 adds eleven and extends four.</p>
+
+<table>
+  <tr><th style="width:170px">Model</th><th style="width:62px"></th><th>Purpose and key fields</th></tr>
+  <tr><td><code>Doctor</code></td><td>extend</td>
+      <td><code>availability_status</code> (in clinic / break / late / unavailable),
+      <code>status_note</code>, <code>average_consult_minutes</code>.</td></tr>
+  <tr><td><code>Appointment</code></td><td>extend</td>
+      <td><code>checked_in</code> and <code>in_consultation</code> added to status;
+      <code>consultation_type</code> (in person / online), <code>meeting_link</code>,
+      <code>started_at</code>.</td></tr>
+  <tr><td><code>Patient</code></td><td>extend</td>
+      <td><code>guardian</code> self-FK for dependants, <code>district</code>, <code>thana</code>.</td></tr>
+  <tr><td><code>Notification</code></td><td>extend</td>
+      <td><code>channel</code> (in-app / email / SMS), <code>delivery_status</code>,
+      <code>category</code>.</td></tr>
+
+  <tr><td><code>QueueEntry</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Optional denormalised snapshot — position, estimated wait, calculated-at. Add
+      <strong>only if</strong> computing live proves slow; correctness first.</td></tr>
+  <tr><td><code>ConsultationNote</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Text thread for online consultations, linked to an appointment.</td></tr>
+  <tr><td><code>MedicalDocument</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Owner, type, file, document date, issuer, notes, size, checksum.</td></tr>
+  <tr><td><code>DocumentShare</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Document, granted-to, granted-by, expires-at, revoked-at. Expiry enforced in the queryset.</td></tr>
+  <tr><td><code>DocumentAccessLog</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Append-only record of every view, so the patient can see who read what.</td></tr>
+  <tr><td><code>Donor</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>User, blood group, district, thana, is-available, last-donation-date, contact preference.</td></tr>
+  <tr><td><code>BloodRequest</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Requester, blood group, units, hospital, urgency, needed-by, status, verified-by.</td></tr>
+  <tr><td><code>DonorResponse</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Request, donor, response, responded-at. Contact revealed only on acceptance.</td></tr>
+  <tr><td><code>DonationRecord</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Donor, date, hospital, units. Drives the 90-day cooldown.</td></tr>
+  <tr><td><code>MedicationSchedule</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Patient, medicine, dosage, times per day, specific times, start and end dates, active flag.</td></tr>
+  <tr><td><code>MedicationDose</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Schedule, due-at, state, confirmed-at. One row per expected dose.</td></tr>
+  <tr><td><code>CareContact</code></td><td><span class="tag t-new">NEW</span></td>
+      <td>Patient, name, phone, relationship, escalation threshold, consent flag.</td></tr>
+</table>
+
+<h3>9.1 New endpoints</h3>
+<table>
+  <tr><th style="width:250px">Endpoint</th><th>Purpose</th></tr>
+  <tr><td><code>GET /queue/me/</code></td><td>My position, wait estimate, doctor status</td></tr>
+  <tr><td><code>GET /queue/doctor/{id}/</code></td><td>Full queue for staff and the doctor</td></tr>
+  <tr><td><code>POST /appointments/{id}/check-in/</code></td><td>Enter the queue</td></tr>
+  <tr><td><code>POST /appointments/{id}/start/</code> · <code>/complete/</code></td><td>Advance the queue</td></tr>
+  <tr><td><code>PATCH /doctors/{id}/availability/</code></td><td>Set clinic status</td></tr>
+  <tr><td><code>ws://…/ws/queue/{doctor_id}/</code></td><td>Live queue updates</td></tr>
+  <tr><td><code>/documents/</code> · <code>/documents/{id}/share/</code> · <code>/shared-with-me/</code></td><td>Records vault</td></tr>
+  <tr><td><code>/donors/</code> · <code>/blood-requests/</code> · <code>/blood-requests/{id}/respond/</code></td><td>Donor network</td></tr>
+  <tr><td><code>/medication-schedules/</code> · <code>/doses/{id}/taken/</code> · <code>/adherence/</code></td><td>Reminders</td></tr>
+</table>
+
+<h2 class="brk"><span class="num">10</span>Technical architecture</h2>
+
+<pre class="code">   React 19 + Tailwind + React Query
+        │                    │
+     HTTP/JSON          WebSocket
+        │                    │
+   ┌────▼────────────────────▼────┐      ┌──────────────┐
+   │  Django 6 + DRF + Channels   │─────▶│  PostgreSQL  │
+   │  accounts · clinical · queue │      └──────────────┘
+   │  records · donors · meds     │      ┌──────────────┐
+   └────┬─────────────────────────┘─────▶│    Redis     │
+        │                                │ cache·layer  │
+        │                                │ ·broker      │
+        ▼                                └──────┬───────┘
+   Media storage                                │
+   (uploads, served                      ┌──────▼───────┐
+    non-executable)                      │Celery worker │
+                                         │  + Beat      │
+                                         │ SMS·email·   │
+                                         │ dose sweeps  │
+                                         └──────────────┘</pre>
+
+<table>
+  <tr><th style="width:150px">Addition</th><th>Why it is needed, specifically</th></tr>
+  <tr><td><strong>Redis</strong></td>
+      <td>Three jobs: Celery broker, cache for queue calculations, and the Channels layer that
+      lets one worker broadcast to sockets held by another.</td></tr>
+  <tr><td><strong>Celery + Beat</strong></td>
+      <td>SMS and email must not block requests. Beat runs the dose sweep and the donor-request
+      widening waves.</td></tr>
+  <tr><td><strong>Django Channels</strong></td>
+      <td>Live queue only. Everything else stays plain REST — do not spread WebSockets further
+      than they earn their place.</td></tr>
+  <tr><td><strong>React Query</strong></td>
+      <td>Caching, refetch on focus, and polling as the queue's fallback transport.</td></tr>
+  <tr><td><strong>PostgreSQL</strong></td>
+      <td>Promote from SQLite. Concurrent check-ins and row locking during queue advancement need
+      a real database.</td></tr>
+</table>
+
+<div class="box">
+  <h4>Sequencing that keeps you sane</h4>
+  <p>
+    Build the queue with <strong>polling first</strong> and add WebSockets afterwards. Polling every
+    30 seconds is genuinely acceptable for a waiting room, it is a fraction of the work, and it
+    becomes your fallback for free. Chasing sockets on day one is the most likely way to stall this
+    project.
+  </p>
+</div>
+
+<h2><span class="num">11</span>Non-functional requirements</h2>
+<table>
+  <tr><th style="width:130px">Area</th><th>Requirement</th></tr>
+  <tr><td><strong>Privacy</strong></td>
+      <td>Donor contact details hidden until acceptance. Document shares expire by default. Every
+      access to another person's record is audited. Uploads are private by default.</td></tr>
+  <tr><td><strong>Security</strong></td>
+      <td>Uploads validated by content type and size, stored outside the executable path.
+      Rate limits on blood requests, document shares, check-in and OTP. The v2 scoping rules extend
+      to every new endpoint.</td></tr>
+  <tr><td><strong>Performance</strong></td>
+      <td>Queue position under 200 ms; WebSocket broadcast under 2 s; donor matching under 1 s for
+      10,000 donors; dose sweep handles 10,000 patients within its 15-minute window.</td></tr>
+  <tr><td><strong>Mobile</strong></td>
+      <td>Patient screens are designed phone-first at 360 px and must be usable one-handed on a
+      slow connection — this is how most patients will actually use it.</td></tr>
+  <tr><td><strong>Reliability</strong></td>
+      <td>SMS failure degrades to in-app. Socket failure degrades to polling. Celery being down
+      delays notifications but never breaks a request.</td></tr>
+  <tr><td><strong>Localisation</strong></td>
+      <td>Bangla and English, with all user-facing strings translatable from the start —
+      retrofitting i18n is far more painful than starting with it. Dates and phone formats local.</td></tr>
+  <tr><td><strong>Testing</strong></td>
+      <td>Backend coverage stays at 80% or better. The permission matrix grows to cover documents,
+      donors and schedules. Blood compatibility and queue ordering get exhaustive tests.</td></tr>
+</table>
+
+<h2 class="brk"><span class="num">12</span>Build order</h2>
+<p class="lede">Five phases. Each ends with something demonstrable.</p>
+
+<table>
+  <tr><th style="width:150px">Phase</th><th style="width:70px">Time</th><th>Contents and exit criteria</th></tr>
+  <tr><td><strong>0 · Foundations</strong></td><td>1 wk</td>
+      <td>PostgreSQL, Redis, Celery, React Query, role-specific shells (UI-1, UI-2).
+      <em>Exit:</em> each role lands on its own page; no page fetches in <code>useEffect</code>.</td></tr>
+  <tr><td><strong>1 · Queue, polled</strong></td><td>1.5–2 wk</td>
+      <td>A-1, A-3, A-4 and the doctor and front-desk screens, refreshing by polling.
+      <em>Exit:</em> a patient sees a position that changes as the doctor works through the list.</td></tr>
+  <tr><td><strong>2 · Queue, live</strong></td><td>1 wk</td>
+      <td>A-2 — Channels, with polling retained as fallback. Online consultation type.
+      <em>Exit:</em> completing a consult updates every waiting screen within 2 s.</td></tr>
+  <tr><td><strong>3 · Records</strong></td><td>1.5–2 wk</td>
+      <td>B-1, B-2, B-3 — upload, timeline, expiring shares, family profiles.
+      <em>Exit:</em> a share expires on time, proven by test; access log visible to the patient.</td></tr>
+  <tr><td><strong>4 · Donors</strong></td><td>1.5–2 wk</td>
+      <td>C-1, C-2, C-3 — compatibility matching, notification waves, privacy rules.
+      <em>Exit:</em> no endpoint leaks contact details pre-acceptance; cooldown enforced.</td></tr>
+  <tr><td><strong>5 · Reminders</strong></td><td>1 wk</td>
+      <td>D-1, D-2, D-3 — schedules, Beat sweeps, adherence, consented escalation.
+      <em>Exit:</em> a missed dose auto-marks and the third miss escalates.</td></tr>
+</table>
+
+<p><em>Roughly 7–9 weeks solo. Phase 0 is genuinely load-bearing — the other phases assume the
+role-specific shells and React Query are already in place.</em></p>
+
+<div class="box">
+  <h4>If you only ship one thing</h4>
+  <p>
+    Phases 0 to 2. A working live queue is the feature patients feel immediately, it is the hardest
+    to copy, and it demonstrates real-time systems, background jobs and role-based UX in one
+    coherent story. The other three features are additive; the queue is the product.
+  </p>
+</div>
+
+<h2><span class="num">13</span>Risks</h2>
+<table>
+  <tr><th style="width:200px">Risk</th><th style="width:52px">Impact</th><th>Mitigation</th></tr>
+  <tr><td>WebSockets stall the project</td><td>High</td>
+      <td>Polling ships first in phase 1 and remains the fallback. Phase 2 is then optional rather
+      than blocking.</td></tr>
+  <tr><td>Wait estimates are wrong and lose trust</td><td>Med</td>
+      <td>Always present as a range with a caveat, never a countdown. Base it on that doctor's own
+      recent history, and say plainly that it is an estimate.</td></tr>
+  <tr><td>Donor network is abused for spam or harassment</td><td>High</td>
+      <td>Rate limits, contact hidden until acceptance, reporting, staff verification, and the
+      ability to go invisible instantly.</td></tr>
+  <tr><td>Upload endpoint becomes an attack vector</td><td>High</td>
+      <td>Content-type validation, size caps, non-executable storage path, and no user-controlled
+      filenames on disk.</td></tr>
+  <tr><td>SMS costs or gateway reliability</td><td>Med</td>
+      <td>Provider behind an interface; in-app is always primary; SMS reserved for genuinely urgent
+      events only.</td></tr>
+  <tr><td>Scope creep across four features</td><td>High</td>
+      <td>Phases are sequential and each ends demonstrable. Finish a phase before starting the next.</td></tr>
+</table>
+
+<h2 class="brk"><span class="num">14</span>Appendix</h2>
+
+<h3>14.1 Dependencies to add</h3>
+<div class="two">
+<div>
+<h4>Backend</h4>
+<ul style="font-size:10.2pt">
+  <li><code>channels</code> + <code>channels-redis</code> — WebSockets</li>
+  <li><code>celery</code> + <code>django-celery-beat</code></li>
+  <li><code>redis</code> + <code>django-redis</code></li>
+  <li><code>psycopg[binary]</code> — PostgreSQL</li>
+  <li><code>pillow</code> — image handling</li>
+  <li><code>python-magic</code> — real content-type checks</li>
+  <li><code>daphne</code> — ASGI server</li>
+</ul>
+</div>
+<div>
+<h4>Frontend</h4>
+<ul style="font-size:10.2pt">
+  <li><code>@tanstack/react-query</code></li>
+  <li><code>react-hook-form</code> + <code>zod</code></li>
+  <li><code>date-fns</code></li>
+  <li><code>recharts</code> — adherence charts</li>
+  <li><code>sonner</code> — toasts</li>
+</ul>
+<h4>Services</h4>
+<ul style="font-size:10.2pt">
+  <li>A Bangladeshi SMS gateway</li>
+  <li>SMTP for email</li>
+</ul>
+</div>
+</div>
+
+<h3>14.2 Definition of done</h3>
+<ul class="chk">
+  <li>Acceptance criteria demonstrably met.</li>
+  <li>Tests written; coverage has not dropped.</li>
+  <li>Every new endpoint has a row in the permission matrix test.</li>
+  <li>Migrations included and reversible.</li>
+  <li><code>ruff</code> and <code>eslint</code> clean; <code>check --deploy</code> still zero issues.</li>
+  <li>Patient-facing screens verified at 360 px width.</li>
+  <li>No personal data exposed that the feature does not strictly require.</li>
+  <li>User-facing strings are translatable.</li>
+</ul>
+
+<h3>14.3 What success looks like</h3>
+<table>
+  <tr><th style="width:230px">Measure</th><th>Target</th></tr>
+  <tr><td>Patient knows their queue position</td><td>Without asking staff, on their own phone</td></tr>
+  <tr><td>Wait estimate accuracy</td><td>Within 15 minutes for 80% of visits</td></tr>
+  <tr><td>Blood request first response</td><td>Under 10 minutes for urgent requests</td></tr>
+  <tr><td>Donor contact leaked before acceptance</td><td>Zero — enforced by test</td></tr>
+  <tr><td>Expired share still readable</td><td>Zero — enforced by test</td></tr>
+  <tr><td>Medication adherence, reminded patients</td><td>Above 85%</td></tr>
+  <tr><td>Backend coverage</td><td>80% or better, 100% on permissions</td></tr>
+</table>
+
+<div class="foot">
+  MediDesk · Product Requirements Document v3.0 · 11 September 2026 · builds on v2.0
+</div>
+
+</body>
+</html>
