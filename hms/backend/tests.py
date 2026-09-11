@@ -1,6 +1,7 @@
 from datetime import date, time, timedelta
 from decimal import Decimal
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -11,6 +12,9 @@ from .models import (
     Bill,
     Doctor,
     DoctorSchedule,
+    DocumentAccessLog,
+    DocumentShare,
+    MedicalDocument,
     Medicine,
     MedicineStock,
     Notification,
@@ -551,3 +555,173 @@ class QueueTests(APITestCase):
             f'/api/v1/doctors/{self.doctor.id}/availability/',
             {'clinic_status': 'on_holiday'}, format='json')
         self.assertEqual(response.status_code, 400)
+
+
+def fake_pdf(name='report.pdf'):
+    return SimpleUploadedFile(name, b'%PDF-1.4 fake report body', content_type='application/pdf')
+
+
+class DocumentTests(APITestCase):
+    def setUp(self):
+        self.alice = make_user('docalice', User.Role.PATIENT)
+        self.bob = make_user('docbob', User.Role.PATIENT)
+        self.doctor_user = make_user('docdoc', User.Role.DOCTOR)
+        self.other_doctor = make_user('docother', User.Role.DOCTOR)
+
+        self.alice_patient = Patient.objects.create(
+            user=self.alice, date_of_birth=date(1990, 5, 5), gender='female',
+            blood_group='A+', address='1 Road', phone='0100000011')
+        self.bob_patient = Patient.objects.create(
+            user=self.bob, date_of_birth=date(1988, 3, 3), gender='male',
+            blood_group='B+', address='2 Road', phone='0100000012')
+
+        Doctor.objects.create(user=self.doctor_user, specialization='GP',
+                              phone='0200000011', experience=6)
+        Doctor.objects.create(user=self.other_doctor, specialization='ENT',
+                              phone='0200000012', experience=3)
+
+    def _upload(self, user, **overrides):
+        self.client.force_authenticate(user)
+        payload = {
+            'title': 'Blood test',
+            'kind': 'lab_report',
+            'document_date': date.today().isoformat(),
+            'file': fake_pdf(),
+        }
+        payload.update(overrides)
+        return self.client.post('/api/v1/documents/', payload, format='multipart')
+
+    def _share(self, document_id, doctor, days=3):
+        return self.client.post(
+            f'/api/v1/documents/{document_id}/share/',
+            {'shared_with': doctor.id,
+             'expires_at': (timezone.now() + timedelta(days=days)).isoformat()},
+            format='json')
+
+    def test_patient_can_upload_a_document(self):
+        response = self._upload(self.alice)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(MedicalDocument.objects.get().patient, self.alice_patient)
+
+    def test_upload_rejects_a_disguised_executable(self):
+        bad = SimpleUploadedFile('evil.pdf', b'MZ\x90\x00 windows executable',
+                                 content_type='application/pdf')
+        response = self._upload(self.alice, file=bad)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('file', response.data)
+
+    def test_upload_rejects_a_mismatched_extension(self):
+        mismatched = SimpleUploadedFile('report.png', b'%PDF-1.4 actually a pdf',
+                                        content_type='image/png')
+        response = self._upload(self.alice, file=mismatched)
+        self.assertEqual(response.status_code, 400)
+
+    def test_upload_rejects_an_oversized_file(self):
+        big = SimpleUploadedFile('big.pdf', b'%PDF-1.4' + b'x' * (11 * 1024 * 1024),
+                                 content_type='application/pdf')
+        response = self._upload(self.alice, file=big)
+        self.assertEqual(response.status_code, 400)
+
+    def test_future_dated_documents_are_rejected(self):
+        response = self._upload(
+            self.alice, document_date=(date.today() + timedelta(days=2)).isoformat())
+        self.assertEqual(response.status_code, 400)
+
+    def test_patient_sees_only_their_own_documents(self):
+        self._upload(self.alice)
+        self._upload(self.bob)
+
+        self.client.force_authenticate(self.alice)
+        rows = self.client.get('/api/v1/documents/').data['results']
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['patient'], self.alice_patient.id)
+
+    def test_doctor_sees_nothing_until_a_record_is_shared(self):
+        self._upload(self.alice)
+        self.client.force_authenticate(self.doctor_user)
+        self.assertEqual(self.client.get('/api/v1/documents/').data['results'], [])
+
+    def test_sharing_grants_access_and_revoking_removes_it(self):
+        document_id = self._upload(self.alice).data['id']
+
+        self.client.force_authenticate(self.alice)
+        share = self._share(document_id, self.doctor_user)
+        self.assertEqual(share.status_code, 201)
+
+        self.client.force_authenticate(self.doctor_user)
+        self.assertEqual(len(self.client.get('/api/v1/documents/').data['results']), 1)
+
+        self.client.force_authenticate(self.alice)
+        self.client.delete(f'/api/v1/document-shares/{share.data["id"]}/')
+
+        self.client.force_authenticate(self.doctor_user)
+        self.assertEqual(self.client.get('/api/v1/documents/').data['results'], [])
+
+    def test_an_expired_share_stops_working(self):
+        document_id = self._upload(self.alice).data['id']
+
+        self.client.force_authenticate(self.alice)
+        self._share(document_id, self.doctor_user)
+
+        self.client.force_authenticate(self.doctor_user)
+        self.assertEqual(len(self.client.get('/api/v1/documents/').data['results']), 1)
+
+        share = DocumentShare.objects.get()
+        share.expires_at = timezone.now() - timedelta(minutes=1)
+        share.save(update_fields=['expires_at'])
+
+        self.assertEqual(self.client.get('/api/v1/documents/').data['results'], [])
+        self.assertEqual(
+            self.client.get(f'/api/v1/documents/{document_id}/').status_code, 404)
+
+    def test_a_share_does_not_leak_to_other_doctors(self):
+        document_id = self._upload(self.alice).data['id']
+
+        self.client.force_authenticate(self.alice)
+        self._share(document_id, self.doctor_user)
+
+        self.client.force_authenticate(self.other_doctor)
+        self.assertEqual(self.client.get('/api/v1/documents/').data['results'], [])
+
+    def test_cannot_share_a_record_you_do_not_own(self):
+        document_id = self._upload(self.alice).data['id']
+
+        self.client.force_authenticate(self.bob)
+        response = self._share(document_id, self.doctor_user)
+        self.assertIn(response.status_code, [403, 404])
+
+    def test_records_can_only_be_shared_with_doctors(self):
+        document_id = self._upload(self.alice).data['id']
+
+        self.client.force_authenticate(self.alice)
+        response = self.client.post(
+            f'/api/v1/documents/{document_id}/share/',
+            {'shared_with': self.bob.id,
+             'expires_at': (timezone.now() + timedelta(days=1)).isoformat()},
+            format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_downloading_writes_an_access_log_entry(self):
+        document_id = self._upload(self.alice).data['id']
+
+        self.client.force_authenticate(self.alice)
+        self._share(document_id, self.doctor_user)
+
+        self.client.force_authenticate(self.doctor_user)
+        self.client.get(f'/api/v1/documents/{document_id}/download/')
+
+        self.client.force_authenticate(self.alice)
+        log = self.client.get(f'/api/v1/documents/{document_id}/access-log/').data
+        self.assertEqual(len(log), 1)
+        self.assertEqual(log[0]['viewed_by'], self.doctor_user.id)
+
+    def test_access_log_is_append_only(self):
+        document = MedicalDocument.objects.create(
+            patient=self.alice_patient, title='x', kind='other',
+            document_date=date.today(), file='documents/x.pdf')
+        entry = DocumentAccessLog.objects.create(document=document, viewed_by=self.doctor_user)
+
+        with self.assertRaises(ValueError):
+            entry.save()
+        with self.assertRaises(ValueError):
+            entry.delete()

@@ -206,6 +206,43 @@ export async function setClinicStatus(doctorId, clinicStatus, statusNote = "") {
   return response.data;
 }
 
+export async function uploadDocument(form) {
+  const response = await API.post("documents/", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return response.data;
+}
+
+export async function downloadDocument(id, title) {
+  const response = await API.get(`documents/${id}/download/`, { responseType: "blob" });
+  const url = URL.createObjectURL(response.data);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = title;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function shareDocument(id, doctorUserId, expiresAt) {
+  const response = await API.post(`documents/${id}/share/`, {
+    shared_with: doctorUserId,
+    expires_at: expiresAt,
+  });
+  return response.data;
+}
+
+export async function fetchDocumentAccessLog(id) {
+  const response = await API.get(`documents/${id}/access-log/`);
+  return response.data;
+}
+
+export async function fetchSharedWithMe() {
+  const response = await API.get("document-shares/shared-with-me/");
+  return response.data;
+}
+
+export const documentsApi = createCrudApi("documents");
+export const documentSharesApi = createCrudApi("document-shares");
 export const departmentsApi = createCrudApi("departments");
 export const doctorsApi = createCrudApi("doctors");
 export const patientsApi = createCrudApi("patients");

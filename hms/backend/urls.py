@@ -13,6 +13,8 @@ from .views import (
     DepartmentViewSet,
     DoctorQueueView,
     DoctorViewSet,
+    DocumentShareViewSet,
+    MedicalDocumentViewSet,
     MedicineViewSet,
     MeView,
     MyQueueView,
@@ -31,6 +33,8 @@ router.register(r'prescriptions', PrescriptionViewSet)
 router.register(r'medicines', MedicineViewSet)
 router.register(r'bills', BillViewSet)
 router.register(r'notifications', NotificationViewSet, basename='notification')
+router.register(r'documents', MedicalDocumentViewSet)
+router.register(r'document-shares', DocumentShareViewSet, basename='document-share')
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),

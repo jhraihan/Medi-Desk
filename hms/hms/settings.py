@@ -133,6 +133,16 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+ALLOWED_UPLOAD_TYPES = {
+    'application/pdf': ['.pdf'],
+    'image/jpeg': ['.jpg', '.jpeg'],
+    'image/png': ['.png'],
+}
+
 CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
 
 REST_FRAMEWORK = {

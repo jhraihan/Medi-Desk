@@ -1,7 +1,8 @@
 from datetime import date
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django_filters.rest_framework import DjangoFilterBackend
@@ -9,12 +10,25 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, mixins, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Appointment, Bill, Department, Doctor, Medicine, Notification, Patient, Prescription
+from .models import (
+    Appointment,
+    Bill,
+    Department,
+    Doctor,
+    DocumentAccessLog,
+    DocumentShare,
+    MedicalDocument,
+    Medicine,
+    Notification,
+    Patient,
+    Prescription,
+)
 from .permissions import (
     AppointmentAccess,
     BillAccess,
@@ -31,6 +45,9 @@ from .serializers import (
     BillSerializer,
     DepartmentSerializer,
     DoctorSerializer,
+    DocumentAccessLogSerializer,
+    DocumentShareSerializer,
+    MedicalDocumentSerializer,
     MedicineSerializer,
     NotificationSerializer,
     PatientSerializer,
@@ -379,3 +396,96 @@ class DoctorQueueView(APIView):
                 for index, appointment in enumerate(waiting)
             ],
         })
+
+
+class MedicalDocumentViewSet(ScopedViewSet):
+    queryset = MedicalDocument.objects.select_related('patient__user')
+    serializer_class = MedicalDocumentSerializer
+    permission_classes = [IsAuthenticated]
+    filterset_fields = ['kind', 'patient']
+    search_fields = ['title', 'issued_by']
+    ordering_fields = ['document_date', 'created_at']
+
+    def scope_queryset(self, queryset, user, role):
+        if role == User.Role.PATIENT:
+            return queryset.filter(patient__user=user)
+        if role == User.Role.DOCTOR:
+            return queryset.filter(
+                shares__shared_with=user,
+                shares__revoked_at__isnull=True,
+                shares__expires_at__gt=timezone.now(),
+            ).distinct()
+        return queryset.none()
+
+    def perform_create(self, serializer):
+        patient = getattr(self.request.user, 'patient', None)
+        if not patient:
+            raise ValidationError('Only a patient can upload to their own records.')
+        serializer.save(patient=patient, uploaded_by=self.request.user)
+
+    @extend_schema(responses={200: OpenApiTypes.BINARY})
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        document = self.get_object()
+        DocumentAccessLog.objects.create(document=document, viewed_by=request.user)
+        return FileResponse(document.file.open('rb'), as_attachment=True,
+                            filename=Path(document.file.name).name)
+
+    @extend_schema(request=DocumentShareSerializer, responses=DocumentShareSerializer)
+    @action(detail=True, methods=['post'])
+    def share(self, request, pk=None):
+        document = self.get_object()
+
+        if getattr(request.user, 'patient', None) != document.patient:
+            return Response({'detail': 'Only the owner can share this record.'}, status=403)
+
+        serializer = DocumentShareSerializer(data={**request.data, 'document': document.pk})
+        serializer.is_valid(raise_exception=True)
+        serializer.save(shared_by=request.user)
+        return Response(serializer.data, status=201)
+
+    @extend_schema(responses=DocumentAccessLogSerializer(many=True))
+    @action(detail=True, methods=['get'], url_path='access-log')
+    def access_log(self, request, pk=None):
+        document = self.get_object()
+
+        if getattr(request.user, 'patient', None) != document.patient:
+            return Response({'detail': 'Only the owner can see this.'}, status=403)
+
+        entries = document.access_log.select_related('viewed_by')[:50]
+        return Response(DocumentAccessLogSerializer(entries, many=True).data)
+
+
+class DocumentShareViewSet(mixins.ListModelMixin, mixins.DestroyModelMixin,
+                           viewsets.GenericViewSet):
+    serializer_class = DocumentShareSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = DocumentShare.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return DocumentShare.objects.none()
+        return (
+            DocumentShare.objects
+            .filter(document__patient__user=self.request.user)
+            .select_related('document', 'shared_with')
+        )
+
+    def perform_destroy(self, instance):
+        instance.revoked_at = timezone.now()
+        instance.save(update_fields=['revoked_at'])
+
+    @extend_schema(responses=MedicalDocumentSerializer(many=True))
+    @action(detail=False, methods=['get'], url_path='shared-with-me')
+    def shared_with_me(self, request):
+        documents = (
+            MedicalDocument.objects
+            .filter(
+                shares__shared_with=request.user,
+                shares__revoked_at__isnull=True,
+                shares__expires_at__gt=timezone.now(),
+            )
+            .select_related('patient__user')
+            .distinct()
+        )
+        return Response(MedicalDocumentSerializer(documents, many=True).data)

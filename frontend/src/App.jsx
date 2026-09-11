@@ -3,6 +3,7 @@ import Layout from "./components/Layout";
 import { AuthProvider, ProtectedRoute, RoleRoute } from "./auth.jsx";
 import Dashboard from "./pages/Dashboard";
 import MyQueue from "./pages/MyQueue";
+import Records from "./pages/Records";
 import Queue from "./pages/Queue";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -55,6 +56,10 @@ function App() {
 
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/my-queue" element={<MyQueue />} />
+
+              <Route element={<RoleRoute allow={["patient", "doctor", "admin"]} />}>
+                <Route path="/records" element={<Records />} />
+              </Route>
 
               <Route element={<RoleRoute allow={[...STAFF, "doctor"]} />}>
                 <Route path="/queue" element={<Queue />} />

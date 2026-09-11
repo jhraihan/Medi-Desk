@@ -1,10 +1,12 @@
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 from uuid import uuid4
 
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
 PHONE_VALIDATOR = RegexValidator(
     r'^\+?[0-9 \-()]{7,20}$',
@@ -382,3 +384,74 @@ class Notification(models.Model):
 
     def __str__(self):
         return f'To {self.recipient}: {self.message[:40]}'
+
+
+def document_path(instance, filename):
+    suffix = Path(filename).suffix.lower()
+    return f'documents/{instance.patient_id}/{uuid4().hex}{suffix}'
+
+
+class MedicalDocument(models.Model):
+    class Kind(models.TextChoices):
+        PRESCRIPTION = 'prescription', 'Prescription'
+        LAB_REPORT = 'lab_report', 'Lab report'
+        SCAN = 'scan', 'Scan or imaging'
+        DISCHARGE = 'discharge', 'Discharge summary'
+        OTHER = 'other', 'Other'
+
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='documents')
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='uploaded_documents')
+    kind = models.CharField(max_length=20, choices=Kind.choices, default=Kind.OTHER)
+    title = models.CharField(max_length=200)
+    file = models.FileField(upload_to=document_path)
+    document_date = models.DateField()
+    issued_by = models.CharField(max_length=200, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-document_date', '-created_at']
+
+    def __str__(self):
+        return f'{self.title} ({self.get_kind_display()})'
+
+
+class DocumentShare(models.Model):
+    document = models.ForeignKey(MedicalDocument, on_delete=models.CASCADE, related_name='shares')
+    shared_with = models.ForeignKey(User, on_delete=models.CASCADE, related_name='shared_documents')
+    shared_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='shares_created')
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.document} shared with {self.shared_with}'
+
+    @property
+    def is_active(self):
+        return self.revoked_at is None and self.expires_at > timezone.now()
+
+
+class DocumentAccessLog(models.Model):
+    document = models.ForeignKey(MedicalDocument, on_delete=models.CASCADE, related_name='access_log')
+    viewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='documents_viewed')
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-viewed_at']
+
+    def __str__(self):
+        return f'{self.viewed_by} viewed {self.document}'
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError('Access log entries cannot be modified.')
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError('Access log entries cannot be deleted.')

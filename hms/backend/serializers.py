@@ -1,3 +1,7 @@
+from datetime import date
+from pathlib import Path
+
+from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from rest_framework import serializers
@@ -8,6 +12,9 @@ from .models import (
     BillItem,
     Department,
     Doctor,
+    DocumentAccessLog,
+    DocumentShare,
+    MedicalDocument,
     Medicine,
     Notification,
     Patient,
@@ -205,3 +212,86 @@ class NotificationSerializer(serializers.ModelSerializer):
         model = Notification
         fields = ['id', 'message', 'is_read', 'created_at']
         read_only_fields = ['message', 'created_at']
+
+
+SIGNATURES = {
+    b'%PDF': 'application/pdf',
+    b'\xff\xd8\xff': 'image/jpeg',
+    b'\x89PNG\r\n\x1a\n': 'image/png',
+}
+
+
+def sniff_type(uploaded):
+    uploaded.seek(0)
+    head = uploaded.read(8)
+    uploaded.seek(0)
+    for signature, content_type in SIGNATURES.items():
+        if head.startswith(signature):
+            return content_type
+    return None
+
+
+class MedicalDocumentSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source='patient.__str__', read_only=True)
+    file_url = serializers.FileField(source='file', read_only=True)
+
+    class Meta:
+        model = MedicalDocument
+        fields = [
+            'id', 'patient', 'patient_name', 'kind', 'title', 'file', 'file_url',
+            'document_date', 'issued_by', 'notes', 'created_at',
+        ]
+        read_only_fields = ['created_at', 'patient']
+        extra_kwargs = {'file': {'write_only': True}}
+
+    def validate_file(self, uploaded):
+        if uploaded.size > settings.MAX_UPLOAD_BYTES:
+            limit = settings.MAX_UPLOAD_BYTES // (1024 * 1024)
+            raise serializers.ValidationError(f'Files must be {limit} MB or smaller.')
+
+        content_type = sniff_type(uploaded)
+        if content_type not in settings.ALLOWED_UPLOAD_TYPES:
+            raise serializers.ValidationError('Upload a PDF, JPG or PNG file.')
+
+        suffix = Path(uploaded.name).suffix.lower()
+        if suffix not in settings.ALLOWED_UPLOAD_TYPES[content_type]:
+            raise serializers.ValidationError('The file extension does not match its contents.')
+
+        return uploaded
+
+    def validate_document_date(self, when):
+        if when > date.today():
+            raise serializers.ValidationError('A document cannot be dated in the future.')
+        return when
+
+
+class DocumentShareSerializer(serializers.ModelSerializer):
+    document_title = serializers.CharField(source='document.title', read_only=True)
+    shared_with_name = serializers.CharField(source='shared_with.get_full_name', read_only=True)
+    is_active = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = DocumentShare
+        fields = [
+            'id', 'document', 'document_title', 'shared_with', 'shared_with_name',
+            'expires_at', 'revoked_at', 'is_active', 'created_at',
+        ]
+        read_only_fields = ['created_at', 'revoked_at']
+
+    def validate_shared_with(self, user):
+        if user.role != User.Role.DOCTOR:
+            raise serializers.ValidationError('Records can only be shared with a doctor.')
+        return user
+
+    def validate_expires_at(self, when):
+        if when <= timezone.now():
+            raise serializers.ValidationError('The expiry must be in the future.')
+        return when
+
+
+class DocumentAccessLogSerializer(serializers.ModelSerializer):
+    viewed_by_name = serializers.CharField(source='viewed_by.get_full_name', read_only=True)
+
+    class Meta:
+        model = DocumentAccessLog
+        fields = ['id', 'document', 'viewed_by', 'viewed_by_name', 'viewed_at']
