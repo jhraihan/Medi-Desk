@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
 import { medicinesApi } from "../api.js";
+import { apiError } from "../errors.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -35,7 +36,7 @@ export default function Medicines() {
         const data = await medicinesApi.list();
         setMedicines(data);
       } catch (err) {
-        setError(err.message || "Failed to load medicines.");
+        setError(apiError(err, "Could not load medicines."));
       } finally {
         setIsLoading(false);
       }
@@ -61,7 +62,7 @@ export default function Medicines() {
       setDescription("");
       reload();
     } catch (err) {
-      setError(err.message || "Failed to add medicine.");
+      setError(apiError(err, "Could not add that medicine."));
     } finally {
       setIsSaving(false);
     }

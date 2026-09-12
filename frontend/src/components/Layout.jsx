@@ -20,7 +20,7 @@ const NAV = [
   { to: "/queue", label: "Live Queue", icon: Activity, roles: ["admin", "receptionist", "doctor"] },
   { to: "/my-queue", label: "My Queue", icon: Activity, roles: ["patient"] },
   { to: "/appointments", label: "Appointments", icon: CalendarDays },
-  { to: "/prescriptions", label: "Prescriptions", icon: FileText },
+  { to: "/prescriptions", label: "Prescriptions", icon: FileText, roles: ["admin", "doctor", "patient", "pharmacist"] },
   { to: "/records", label: "Records", icon: FolderHeart, roles: ["patient", "doctor", "admin"] },
   { to: "/blood", label: "Blood", icon: Droplet },
   { to: "/reminders", label: "Reminders", icon: BellRing, roles: ["patient"] },

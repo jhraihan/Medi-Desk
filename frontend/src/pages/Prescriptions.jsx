@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Plus, Trash2, X } from "lucide-react";
 import { appointmentsApi, dispensePrescription, medicinesApi, prescriptionsApi } from "../api.js";
 import { useAuth } from "../auth-context.js";
+import { apiError } from "../errors.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -17,6 +18,7 @@ import {
 export default function Prescriptions() {
   const { user } = useAuth();
   const canDispense = ["pharmacist", "admin"].includes(user?.role);
+  const canPrescribe = ["doctor", "admin"].includes(user?.role);
   const [prescriptions, setPrescriptions] = useState([]);
   const [appointments, setAppointments] = useState([]);
   const [medicines, setMedicines] = useState([]);
@@ -49,24 +51,25 @@ export default function Prescriptions() {
   useEffect(() => {
     async function load() {
       try {
-        setIsLoading(true);
-        const [prescRes, aptRes, medRes] = await Promise.all([
-          prescriptionsApi.list(),
-          appointmentsApi.list(),
-          medicinesApi.list(),
-        ]);
-        setPrescriptions(prescRes);
-        setAppointments(aptRes);
-        setMedicines(medRes);
+        setPrescriptions(await prescriptionsApi.list());
         setError("");
-      } catch (err) {
-        setError(err.message || "Failed to load prescriptions.");
+      } catch {
+        setError("Could not load prescriptions.");
       } finally {
         setIsLoading(false);
       }
+
+      if (!canPrescribe) return;
+
+      const [aptRes, medRes] = await Promise.all([
+        appointmentsApi.list().catch(() => []),
+        medicinesApi.list().catch(() => []),
+      ]);
+      setAppointments(aptRes);
+      setMedicines(medRes);
     }
     load();
-  }, [reloadCount]);
+  }, [reloadCount, canPrescribe]);
 
   function handleAddMedicineRow() {
     setSelectedMedicines([
@@ -110,7 +113,7 @@ export default function Prescriptions() {
       setSelectedMedicines([{ medicine: "", dosage: "", duration: "" }]);
       reload();
     } catch (err) {
-      setError(err.message || "Failed to create prescription.");
+      setError(apiError(err, "Could not create that prescription."));
     } finally {
       setIsSaving(false);
     }
@@ -250,11 +253,13 @@ export default function Prescriptions() {
       <div className="animate-fade">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-ink-900">
-            {isLoading ? "Loading..." : `${prescriptions.length} Prescriptions`}
+            {isLoading ? "Loading…" : `${prescriptions.length} prescriptions`}
           </h2>
-          <Button onClick={() => setFormIsOpen(true)}>
-            <Plus size={14} /> Create Prescription
-          </Button>
+          {canPrescribe && (
+            <Button onClick={() => setFormIsOpen(true)}>
+              <Plus size={14} /> Create Prescription
+            </Button>
+          )}
         </div>
 
         <Table

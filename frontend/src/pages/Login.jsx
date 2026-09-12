@@ -5,6 +5,16 @@ import { fetchMe, login } from "../api.js";
 import { useAuth } from "../auth-context.js";
 import { Alert, Button, Input } from "../components/index.js";
 
+const DEMO_ACCOUNTS = [
+  { username: "hospital_admin", label: "Admin", hint: "Everything" },
+  { username: "aisha", label: "Doctor", hint: "Clinic & prescribing" },
+  { username: "reception", label: "Receptionist", hint: "Front desk" },
+  { username: "pharmacy", label: "Pharmacist", hint: "Dispensing & stock" },
+  { username: "rafi", label: "Patient", hint: "Queue, records, reminders" },
+];
+
+const DEMO_PASSWORD = "Demo!2345";
+
 const HIGHLIGHTS = [
   { icon: CalendarDays, title: "Live queue", text: "See your position and waiting time in real time." },
   { icon: HeartPulse, title: "Your records", text: "Prescriptions and reports, kept in one place." },
@@ -19,13 +29,12 @@ export default function Login() {
   const navigate = useNavigate();
   const { setUser } = useAuth();
 
-  async function handleSubmit(event) {
-    event.preventDefault();
+  async function signIn(name, secret) {
     setError("");
     setIsLoggingIn(true);
 
     try {
-      const data = await login(username, password);
+      const data = await login(name, secret);
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
       setUser(await fetchMe());
@@ -35,6 +44,11 @@ export default function Login() {
     } finally {
       setIsLoggingIn(false);
     }
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault();
+    signIn(username, password);
   }
 
   return (
@@ -102,6 +116,29 @@ export default function Login() {
               {isLoggingIn ? "Signing in…" : "Log in"}
             </Button>
           </form>
+
+          <div className="mt-7 border-t border-brand-100 pt-5">
+            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-500">
+              Try a demo account
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {DEMO_ACCOUNTS.map((account) => (
+                <button
+                  key={account.username}
+                  type="button"
+                  disabled={isLoggingIn}
+                  onClick={() => signIn(account.username, DEMO_PASSWORD)}
+                  className="rounded-xl border border-brand-200/70 bg-white/70 px-3 py-2 text-left transition-all duration-200 hover:border-brand-400 hover:bg-white disabled:opacity-60"
+                >
+                  <span className="block text-sm font-medium text-ink-900">{account.label}</span>
+                  <span className="block text-xs text-ink-500">{account.hint}</span>
+                </button>
+              ))}
+            </div>
+            <p className="mt-3 text-xs text-ink-400">
+              All demo accounts use the password {DEMO_PASSWORD}
+            </p>
+          </div>
 
           <p className="mt-6 text-center text-sm text-ink-500">
             New patient?{" "}

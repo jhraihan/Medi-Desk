@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { doctorsApi } from "../api.js";
+import { apiError } from "../errors.js";
 import { useFlash } from "../flash.js";
 import { Alert, PageHeader, Table } from "../components/index.js";
 
@@ -19,7 +20,7 @@ export default function Doctors() {
         const data = await doctorsApi.list();
         setDoctors(data);
       } catch (err) {
-        setError(err.message || "Failed to load doctors.");
+        setError(apiError(err, "Could not load doctors."));
       } finally {
         setIsLoading(false);
       }
@@ -33,7 +34,7 @@ export default function Doctors() {
       setNotice("Availability status updated.");
       reload();
     } catch (err) {
-      setError(err.message || "Failed to update availability.");
+      setError(apiError(err, "Could not update availability."));
     }
   }
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { billsApi, openInvoice, patientsApi, payBill } from "../api.js";
+import { apiError } from "../errors.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -38,7 +39,7 @@ export default function Billing() {
         setBills(billRes);
         setPatients(patRes);
       } catch (err) {
-        setError(err.message || "Failed to load billing records.");
+        setError(apiError(err, "Could not load billing."));
       } finally {
         setIsLoading(false);
       }
@@ -61,7 +62,7 @@ export default function Billing() {
       setAmount("");
       reload();
     } catch (err) {
-      setError(err.message || "Failed to generate bill.");
+      setError(apiError(err, "Could not create that bill."));
     } finally {
       setIsSaving(false);
     }

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { patientsApi } from "../api.js";
+import { apiError } from "../errors.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -37,7 +38,7 @@ export default function Patients() {
         const data = await patientsApi.list();
         setPatients(data);
       } catch (err) {
-        setError(err.message || "Failed to load patients.");
+        setError(apiError(err, "Could not load patients."));
       } finally {
         setIsLoading(false);
       }
@@ -61,7 +62,7 @@ export default function Patients() {
       setFormIsOpen(false);
       reload();
     } catch (err) {
-      setError(err.message || "Failed to add patient.");
+      setError(apiError(err, "Could not add that patient."));
     } finally {
       setIsSaving(false);
     }

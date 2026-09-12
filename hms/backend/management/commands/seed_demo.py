@@ -10,9 +10,13 @@ from backend.models import (
     Appointment,
     Bill,
     BillItem,
+    BloodRequest,
+    CareContact,
     Department,
     Doctor,
     DoctorSchedule,
+    Donor,
+    MedicationSchedule,
     Medicine,
     MedicineStock,
     Patient,
@@ -21,6 +25,7 @@ from backend.models import (
     PrescriptionMedicine,
     User,
 )
+from backend.services import build_doses
 
 PASSWORD = 'Demo!2345'
 
@@ -88,6 +93,9 @@ class Command(BaseCommand):
         appointments = self._appointments(doctors, patients)
         self._prescriptions(appointments, medicines)
         self._bills(appointments)
+        self._queue(appointments)
+        self._donors(patients)
+        self._reminders(patients, medicines)
 
         self.stdout.write(self.style.SUCCESS(
             f'\nSeeded {len(departments)} departments, {len(doctors)} doctors, '
@@ -101,6 +109,10 @@ class Command(BaseCommand):
         self.stdout.write('  patient    rafi')
 
     def _flush(self):
+        MedicationSchedule.objects.all().delete()
+        CareContact.objects.all().delete()
+        BloodRequest.objects.all().delete()
+        Donor.objects.all().delete()
         Payment.objects.all().delete()
         BillItem.objects.all().delete()
         Bill.objects.all().delete()
@@ -290,3 +302,91 @@ class Command(BaseCommand):
                 Payment.objects.create(bill=bill, amount=bill.total, method='card')
                 bill.paid = True
                 bill.save(update_fields=['paid'])
+
+    def _queue(self, appointments):
+        today = timezone.localdate()
+        todays = [a for a in appointments if a.appointment_date.date() == today]
+
+        doctor = Doctor.objects.first()
+        patients = list(Patient.objects.all())
+        base = timezone.now().replace(minute=0, second=0, microsecond=0)
+        reasons = ['Fever and cough', 'Follow-up review', 'Chest pain', 'Rash on arms']
+
+        index = 0
+        while len(todays) < 4 and index < len(patients):
+            when = base + timedelta(hours=index + 1)
+            if not Appointment.objects.filter(doctor=doctor, appointment_date=when).exists():
+                todays.append(Appointment.objects.create(
+                    patient=patients[index], doctor=doctor, appointment_date=when,
+                    status='approved', reason=reasons[index % len(reasons)]))
+            index += 1
+
+        for index, appointment in enumerate(todays[:3]):
+            appointment.checked_in_at = timezone.now() - timedelta(minutes=30 - index * 10)
+            appointment.status = 'checked_in'
+            appointment.save(update_fields=['checked_in_at', 'status'])
+
+    def _donors(self, patients):
+        if Donor.objects.exists():
+            return
+
+        groups = ['O-', 'O+', 'B+', 'A+', 'AB+']
+        districts = ['Dhaka', 'Dhaka', 'Gazipur', 'Dhaka', 'Chattogram']
+
+        for index, patient in enumerate(patients):
+            Donor.objects.create(
+                user=patient.user,
+                blood_group=groups[index % len(groups)],
+                district=districts[index % len(districts)],
+                area=random.choice(['Mirpur', 'Dhanmondi', 'Uttara', 'Banani']),
+                phone=f'017{random.randint(10000000, 99999999)}',
+                last_donation_date=(
+                    date.today() - timedelta(days=20) if index == 3 else None),
+            )
+
+        BloodRequest.objects.create(
+            requested_by=patients[0].user,
+            blood_group='O+',
+            units=2,
+            hospital='Dhaka Medical College Hospital',
+            district='Dhaka',
+            needed_by=timezone.now() + timedelta(hours=8),
+            urgency='critical',
+            note='Surgery scheduled for tomorrow morning.',
+        )
+
+    def _reminders(self, patients, medicines):
+        if MedicationSchedule.objects.exists():
+            return
+
+        patient = patients[0]
+        for medicine, times in [(medicines[3], ['08:00', '20:00']), (medicines[1], ['21:00'])]:
+            schedule = MedicationSchedule.objects.create(
+                patient=patient,
+                medicine=medicine,
+                medicine_name=medicine.name,
+                dosage='1 tablet',
+                instructions='After food',
+                times=times,
+                start_date=date.today() - timedelta(days=3),
+                end_date=date.today() + timedelta(days=10),
+            )
+            build_doses(schedule)
+
+        past = schedule.doses.filter(due_at__lt=timezone.now()).order_by('due_at')
+        for index, dose in enumerate(past):
+            dose.state = 'missed' if index % 4 == 3 else 'taken'
+            dose.confirmed_at = dose.due_at
+            dose.save(update_fields=['state', 'confirmed_at'])
+
+        CareContact.objects.get_or_create(
+            patient=patient,
+            defaults={
+                'name': 'Shirin Ahmed',
+                'phone': '01711111111',
+                'relationship': 'Daughter',
+                'user': patients[1].user,
+                'alert_after_misses': 3,
+                'consent_given': True,
+            },
+        )

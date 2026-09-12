@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { appointmentsApi, checkInAppointment, doctorsApi, patientsApi } from "../api.js";
+import { apiError } from "../errors.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -67,7 +68,7 @@ export default function Appointments() {
         setPatients(patRes);
         setError("");
       } catch (err) {
-        setError(err.message || "Failed to load appointments.");
+        setError(apiError(err, "Could not load appointments."));
       } finally {
         setIsLoading(false);
       }
@@ -92,7 +93,7 @@ export default function Appointments() {
       setAppointmentDate("");
       reload();
     } catch (err) {
-      setError(err.message || "Failed to book appointment.");
+      setError(apiError(err, "Could not book that appointment."));
     } finally {
       setIsSaving(false);
     }
@@ -114,7 +115,7 @@ export default function Appointments() {
       setNotice(`Appointment marked as ${newStatus}.`);
       reload();
     } catch (err) {
-      setError(err.message || "Failed to update status.");
+      setError(apiError(err, "Could not update the status."));
     }
   }
 
