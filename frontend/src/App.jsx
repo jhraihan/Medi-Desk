@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate, Link } from "react-router-dom";
 import Layout from "./components/Layout";
 import { AuthProvider, ProtectedRoute, RoleRoute } from "./auth.jsx";
+import BloodDonation from "./pages/BloodDonation";
 import Dashboard from "./pages/Dashboard";
 import MyQueue from "./pages/MyQueue";
 import Records from "./pages/Records";
@@ -56,6 +57,7 @@ function App() {
 
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/my-queue" element={<MyQueue />} />
+              <Route path="/blood" element={<BloodDonation />} />
 
               <Route element={<RoleRoute allow={["patient", "doctor", "admin"]} />}>
                 <Route path="/records" element={<Records />} />

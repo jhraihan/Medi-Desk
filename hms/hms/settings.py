@@ -162,6 +162,7 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'register': '5/hour',
         'login': '10/hour',
+        'blood_request': '10/day',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }

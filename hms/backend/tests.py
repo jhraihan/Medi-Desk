@@ -1,19 +1,26 @@
 from datetime import date, time, timedelta
 from decimal import Decimal
 
+from django.conf import settings
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import (
+    COMPATIBLE_DONORS,
     Appointment,
     AuditLog,
     Bill,
+    BloodRequest,
     Doctor,
     DoctorSchedule,
     DocumentAccessLog,
     DocumentShare,
+    DonationRecord,
+    Donor,
     MedicalDocument,
     Medicine,
     MedicineStock,
@@ -24,7 +31,7 @@ from .models import (
     PrescriptionMedicine,
     User,
 )
-from .services import queue_position, queue_state
+from .services import matching_donors, queue_position, queue_state
 
 
 def make_user(username, role, **extra):
@@ -725,3 +732,227 @@ class DocumentTests(APITestCase):
             entry.save()
         with self.assertRaises(ValueError):
             entry.delete()
+
+
+class BloodCompatibilityTests(APITestCase):
+    def test_o_negative_is_the_universal_donor(self):
+        for group in COMPATIBLE_DONORS:
+            self.assertIn('O-', COMPATIBLE_DONORS[group])
+
+    def test_ab_positive_can_receive_from_everyone(self):
+        self.assertEqual(len(COMPATIBLE_DONORS['AB+']), 8)
+
+    def test_o_negative_can_only_receive_o_negative(self):
+        self.assertEqual(COMPATIBLE_DONORS['O-'], ['O-'])
+
+    def test_a_positive_cannot_receive_from_b(self):
+        self.assertNotIn('B+', COMPATIBLE_DONORS['A+'])
+        self.assertNotIn('B-', COMPATIBLE_DONORS['A+'])
+
+
+@override_settings(REST_FRAMEWORK={**settings.REST_FRAMEWORK,
+                                   'DEFAULT_THROTTLE_RATES': {}})
+class DonorNetworkTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.seeker = make_user('seeker', User.Role.PATIENT)
+        self.o_neg = self._donor('odonor', 'O-', 'Dhaka')
+        self.a_pos = self._donor('adonor', 'A+', 'Dhaka')
+        self.b_pos = self._donor('bdonor', 'B+', 'Khulna')
+
+    def _donor(self, username, blood_group, district, last_donation=None):
+        user = make_user(username, User.Role.PATIENT)
+        return Donor.objects.create(
+            user=user, blood_group=blood_group, district=district,
+            phone='0171234567', last_donation_date=last_donation)
+
+    def _request(self, blood_group='A+', district='Dhaka'):
+        self.client.force_authenticate(self.seeker)
+        return self.client.post('/api/v1/blood-requests/', {
+            'blood_group': blood_group,
+            'units': 2,
+            'hospital': 'Dhaka Medical College Hospital',
+            'district': district,
+            'needed_by': (timezone.now() + timedelta(hours=6)).isoformat(),
+            'urgency': 'critical',
+        }, format='json')
+
+    def test_creating_a_request_notifies_compatible_donors_only(self):
+        response = self._request(blood_group='A+')
+        self.assertEqual(response.status_code, 201)
+
+        notified = set(
+            Notification.objects.values_list('recipient__username', flat=True))
+        self.assertIn('odonor', notified)
+        self.assertIn('adonor', notified)
+        self.assertNotIn('bdonor', notified)
+
+    def test_o_negative_request_reaches_only_o_negative_donors(self):
+        self._request(blood_group='O-')
+        notified = set(
+            Notification.objects.values_list('recipient__username', flat=True))
+        self.assertEqual(notified, {'odonor'})
+
+    def test_donors_in_cooldown_are_not_matched(self):
+        recent = self._donor('recent', 'A+', 'Dhaka',
+                             last_donation=date.today() - timedelta(days=10))
+        blood_request = BloodRequest.objects.create(
+            requested_by=self.seeker, blood_group='A+', units=1,
+            hospital='X', district='Dhaka',
+            needed_by=timezone.now() + timedelta(hours=5))
+
+        matched = matching_donors(blood_request)
+        self.assertNotIn(recent, matched)
+        self.assertIn(self.a_pos, matched)
+
+    def test_a_donor_past_cooldown_is_matched_again(self):
+        old = self._donor('older', 'A+', 'Dhaka',
+                          last_donation=date.today() - timedelta(days=120))
+        blood_request = BloodRequest.objects.create(
+            requested_by=self.seeker, blood_group='A+', units=1,
+            hospital='X', district='Dhaka',
+            needed_by=timezone.now() + timedelta(hours=5))
+        self.assertIn(old, matching_donors(blood_request))
+
+    def test_unavailable_donors_are_not_matched(self):
+        self.a_pos.is_available = False
+        self.a_pos.save()
+
+        blood_request = BloodRequest.objects.create(
+            requested_by=self.seeker, blood_group='A+', units=1,
+            hospital='X', district='Dhaka',
+            needed_by=timezone.now() + timedelta(hours=5))
+        self.assertNotIn(self.a_pos, matching_donors(blood_request))
+
+    def test_same_district_donors_come_first(self):
+        far = self._donor('farone', 'O-', 'Sylhet')
+        blood_request = BloodRequest.objects.create(
+            requested_by=self.seeker, blood_group='O-', units=1,
+            hospital='X', district='Dhaka',
+            needed_by=timezone.now() + timedelta(hours=5))
+
+        matched = matching_donors(blood_request)
+        self.assertEqual(matched[0], self.o_neg)
+        self.assertIn(far, matched)
+
+    def test_donor_list_never_exposes_a_phone_number(self):
+        self._request()
+        self.client.force_authenticate(self.a_pos.user)
+        rows = self.client.get('/api/v1/blood-requests/').data['results']
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertNotIn('phone', row)
+            self.assertNotIn('donor_phone', row)
+
+    def test_contact_is_hidden_until_the_donor_accepts(self):
+        request_id = self._request().data['id']
+
+        self.client.force_authenticate(self.a_pos.user)
+        self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                         {'reply': 'no'}, format='json')
+
+        self.client.force_authenticate(self.seeker)
+        responders = self.client.get(
+            f'/api/v1/blood-requests/{request_id}/responders/').data
+        self.assertEqual(responders, [])
+
+    def test_contact_is_revealed_after_the_donor_accepts(self):
+        request_id = self._request().data['id']
+
+        self.client.force_authenticate(self.a_pos.user)
+        self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                         {'reply': 'yes'}, format='json')
+
+        self.client.force_authenticate(self.seeker)
+        responders = self.client.get(
+            f'/api/v1/blood-requests/{request_id}/responders/').data
+        self.assertEqual(len(responders), 1)
+        self.assertEqual(responders[0]['donor_phone'], self.a_pos.phone)
+
+    def test_only_the_requester_sees_responders(self):
+        request_id = self._request().data['id']
+
+        self.client.force_authenticate(self.a_pos.user)
+        self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                         {'reply': 'yes'}, format='json')
+
+        self.client.force_authenticate(self.o_neg.user)
+        response = self.client.get(f'/api/v1/blood-requests/{request_id}/responders/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_incompatible_donor_cannot_even_see_the_request(self):
+        request_id = self._request(blood_group='O-').data['id']
+
+        self.client.force_authenticate(self.a_pos.user)
+        response = self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                                    {'reply': 'yes'}, format='json')
+        self.assertEqual(response.status_code, 404)
+
+    def test_compatible_donor_in_cooldown_is_refused_with_a_reason(self):
+        cooling = self._donor('cooling2', 'O-', 'Dhaka',
+                              last_donation=date.today() - timedelta(days=3))
+        request_id = self._request(blood_group='O-').data['id']
+
+        self.client.force_authenticate(cooling.user)
+        response = self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                                    {'reply': 'yes'}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('donate again', response.data['detail'])
+
+    def test_donor_in_cooldown_cannot_accept(self):
+        recent = self._donor('cooling', 'A+', 'Dhaka',
+                             last_donation=date.today() - timedelta(days=5))
+        request_id = self._request().data['id']
+
+        self.client.force_authenticate(recent.user)
+        response = self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                                    {'reply': 'yes'}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_you_cannot_respond_to_your_own_request(self):
+        Donor.objects.create(user=self.seeker, blood_group='A+',
+                             district='Dhaka', phone='0171111111')
+        request_id = self._request().data['id']
+
+        self.client.force_authenticate(self.seeker)
+        response = self.client.post(f'/api/v1/blood-requests/{request_id}/respond/',
+                                    {'reply': 'yes'}, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_donors_only_see_requests_they_can_help_with(self):
+        self._request(blood_group='O-')
+
+        self.client.force_authenticate(self.b_pos.user)
+        rows = self.client.get('/api/v1/blood-requests/').data['results']
+        self.assertEqual(rows, [])
+
+        self.client.force_authenticate(self.o_neg.user)
+        self.assertEqual(len(self.client.get('/api/v1/blood-requests/').data['results']), 1)
+
+    def test_recording_a_donation_starts_the_cooldown(self):
+        DonationRecord.objects.create(
+            donor=self.a_pos, donated_on=date.today(), hospital='X', units=1)
+
+        self.a_pos.refresh_from_db()
+        self.assertEqual(self.a_pos.last_donation_date, date.today())
+        self.assertFalse(self.a_pos.can_donate)
+        self.assertEqual(self.a_pos.available_from, date.today() + timedelta(days=90))
+
+    def test_a_request_cannot_be_needed_in_the_past(self):
+        self.client.force_authenticate(self.seeker)
+        response = self.client.post('/api/v1/blood-requests/', {
+            'blood_group': 'A+', 'units': 1, 'hospital': 'X', 'district': 'Dhaka',
+            'needed_by': (timezone.now() - timedelta(hours=1)).isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_a_donor_profile_is_separate_from_the_patient_account(self):
+        self.client.force_authenticate(self.seeker)
+        self.assertIsNone(self.client.get('/api/v1/donors/me/').data['donor'])
+
+    def test_a_user_cannot_have_two_donor_profiles(self):
+        self.client.force_authenticate(self.a_pos.user)
+        response = self.client.post('/api/v1/donors/', {
+            'blood_group': 'A+', 'district': 'Dhaka', 'phone': '0170000000',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)

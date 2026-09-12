@@ -2,6 +2,7 @@ from datetime import date
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.http import FileResponse, HttpResponse
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -17,12 +18,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import (
+    COMPATIBLE_DONORS,
     Appointment,
     Bill,
+    BloodRequest,
     Department,
     Doctor,
     DocumentAccessLog,
     DocumentShare,
+    Donor,
+    DonorResponse,
     MedicalDocument,
     Medicine,
     Notification,
@@ -43,10 +48,13 @@ from .permissions import (
 from .serializers import (
     AppointmentSerializer,
     BillSerializer,
+    BloodRequestSerializer,
     DepartmentSerializer,
     DoctorSerializer,
     DocumentAccessLogSerializer,
     DocumentShareSerializer,
+    DonorResponseSerializer,
+    DonorSerializer,
     MedicalDocumentSerializer,
     MedicineSerializer,
     NotificationSerializer,
@@ -61,6 +69,7 @@ from .services import (
     available_slots,
     dashboard_for,
     dispense_prescription,
+    notify_matching_donors,
     queue_for_doctor,
     queue_state,
     refresh_average_consult_time,
@@ -489,3 +498,127 @@ class DocumentShareViewSet(mixins.ListModelMixin, mixins.DestroyModelMixin,
             .distinct()
         )
         return Response(MedicalDocumentSerializer(documents, many=True).data)
+
+
+class DonorViewSet(viewsets.ModelViewSet):
+    serializer_class = DonorSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = Donor.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return Donor.objects.none()
+        if role_of(self.request.user) == User.Role.ADMIN:
+            return Donor.objects.select_related('user')
+        return Donor.objects.filter(user=self.request.user).select_related('user')
+
+    def perform_create(self, serializer):
+        if Donor.objects.filter(user=self.request.user).exists():
+            raise ValidationError('You already have a donor profile.')
+        serializer.save(user=self.request.user)
+
+    @extend_schema(responses=DonorSerializer)
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        donor = getattr(request.user, 'donor', None)
+        if not donor:
+            return Response({'donor': None})
+        return Response(DonorSerializer(donor).data)
+
+
+class BloodRequestViewSet(viewsets.ModelViewSet):
+    serializer_class = BloodRequestSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = BloodRequest.objects.select_related('requested_by')
+    filterset_fields = ['blood_group', 'district', 'urgency', 'status']
+    ordering_fields = ['created_at', 'needed_by']
+    throttle_scope = 'blood_request'
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return BloodRequest.objects.none()
+
+        queryset = super().get_queryset()
+        donor = getattr(self.request.user, 'donor', None)
+
+        if role_of(self.request.user) == User.Role.ADMIN:
+            return queryset
+
+        mine = Q(requested_by=self.request.user)
+        if donor:
+            compatible = [
+                group for group, sources in COMPATIBLE_DONORS.items()
+                if donor.blood_group in sources
+            ]
+            return queryset.filter(mine | Q(status='open', blood_group__in=compatible))
+        return queryset.filter(mine)
+
+    def get_throttles(self):
+        if self.action == 'create':
+            return super().get_throttles()
+        return []
+
+    def perform_create(self, serializer):
+        blood_request = serializer.save(requested_by=self.request.user)
+        notify_matching_donors(blood_request)
+
+    @extend_schema(request=None, responses=BloodRequestSerializer)
+    @action(detail=True, methods=['post'])
+    def respond(self, request, pk=None):
+        blood_request = self.get_object()
+        donor = getattr(request.user, 'donor', None)
+
+        if not donor:
+            return Response({'detail': 'Register as a donor first.'}, status=400)
+        if blood_request.requested_by_id == request.user.id:
+            return Response({'detail': 'You cannot respond to your own request.'}, status=400)
+        if blood_request.status != BloodRequest.Status.OPEN:
+            return Response({'detail': 'This request is closed.'}, status=400)
+
+        reply = request.data.get('reply')
+        if reply not in DonorResponse.Reply.values:
+            return Response({'detail': 'Reply must be yes or no.'}, status=400)
+
+        if reply == DonorResponse.Reply.YES:
+            if donor.blood_group not in COMPATIBLE_DONORS[blood_request.blood_group]:
+                return Response(
+                    {'detail': 'Your blood group is not compatible with this request.'}, status=400)
+            if not donor.can_donate:
+                return Response(
+                    {'detail': f'You can donate again from {donor.available_from}.'}, status=400)
+
+        DonorResponse.objects.update_or_create(
+            request=blood_request, donor=donor, defaults={'reply': reply})
+        return Response(
+            BloodRequestSerializer(blood_request, context={'request': request}).data)
+
+    @extend_schema(responses=DonorResponseSerializer(many=True))
+    @action(detail=True, methods=['get'])
+    def responders(self, request, pk=None):
+        blood_request = self.get_object()
+
+        if blood_request.requested_by_id != request.user.id and role_of(request.user) != User.Role.ADMIN:
+            return Response({'detail': 'Only the requester can see this.'}, status=403)
+
+        responses = (
+            blood_request.responses
+            .filter(reply=DonorResponse.Reply.YES)
+            .select_related('donor__user')
+        )
+        return Response(
+            DonorResponseSerializer(responses, many=True, context={'request': request}).data)
+
+    @extend_schema(request=None, responses=BloodRequestSerializer)
+    @action(detail=True, methods=['post'])
+    def close(self, request, pk=None):
+        blood_request = self.get_object()
+
+        if blood_request.requested_by_id != request.user.id and role_of(request.user) != User.Role.ADMIN:
+            return Response({'detail': 'Only the requester can close this.'}, status=403)
+
+        blood_request.status = request.data.get('status', BloodRequest.Status.FULFILLED)
+        if blood_request.status not in BloodRequest.Status.values:
+            return Response({'detail': 'Unknown status.'}, status=400)
+        blood_request.save(update_fields=['status'])
+        return Response(
+            BloodRequestSerializer(blood_request, context={'request': request}).data)

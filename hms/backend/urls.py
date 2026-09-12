@@ -9,11 +9,13 @@ from rest_framework_simplejwt.views import (
 from .views import (
     AppointmentViewSet,
     BillViewSet,
+    BloodRequestViewSet,
     DashboardView,
     DepartmentViewSet,
     DoctorQueueView,
     DoctorViewSet,
     DocumentShareViewSet,
+    DonorViewSet,
     MedicalDocumentViewSet,
     MedicineViewSet,
     MeView,
@@ -34,6 +36,8 @@ router.register(r'medicines', MedicineViewSet)
 router.register(r'bills', BillViewSet)
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'documents', MedicalDocumentViewSet)
+router.register(r'donors', DonorViewSet, basename='donor')
+router.register(r'blood-requests', BloodRequestViewSet)
 router.register(r'document-shares', DocumentShareViewSet, basename='document-share')
 
 urlpatterns = [

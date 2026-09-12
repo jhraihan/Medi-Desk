@@ -243,6 +243,28 @@ export async function fetchSharedWithMe() {
 
 export const documentsApi = createCrudApi("documents");
 export const documentSharesApi = createCrudApi("document-shares");
+export async function fetchMyDonorProfile() {
+  const response = await API.get("donors/me/");
+  return response.data;
+}
+
+export async function respondToRequest(id, reply) {
+  const response = await API.post(`blood-requests/${id}/respond/`, { reply });
+  return response.data;
+}
+
+export async function fetchResponders(id) {
+  const response = await API.get(`blood-requests/${id}/responders/`);
+  return response.data;
+}
+
+export async function closeBloodRequest(id, status = "fulfilled") {
+  const response = await API.post(`blood-requests/${id}/close/`, { status });
+  return response.data;
+}
+
+export const donorsApi = createCrudApi("donors");
+export const bloodRequestsApi = createCrudApi("blood-requests");
 export const departmentsApi = createCrudApi("departments");
 export const doctorsApi = createCrudApi("doctors");
 export const patientsApi = createCrudApi("patients");

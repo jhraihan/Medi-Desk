@@ -1,14 +1,17 @@
 from datetime import date, datetime, timedelta
 
 from django.db import transaction
-from django.db.models import Count, F, Sum
+from django.db.models import Count, F, Q, Sum
 from django.utils import timezone
 
 from .models import (
+    COMPATIBLE_DONORS,
+    DONATION_COOLDOWN_DAYS,
     Appointment,
     Bill,
     BillItem,
     Doctor,
+    Donor,
     Medicine,
     MedicineStock,
     Notification,
@@ -277,3 +280,36 @@ def refresh_average_consult_time(doctor):
     if lengths:
         doctor.average_consult_minutes = max(5, round(sum(lengths) / len(lengths)))
         doctor.save(update_fields=['average_consult_minutes'])
+
+
+def matching_donors(blood_request):
+    compatible = COMPATIBLE_DONORS[blood_request.blood_group]
+    cutoff = date.today() - timedelta(days=DONATION_COOLDOWN_DAYS)
+
+    donors = (
+        Donor.objects
+        .filter(blood_group__in=compatible, is_available=True)
+        .filter(Q(last_donation_date__isnull=True) | Q(last_donation_date__lte=cutoff))
+        .exclude(user=blood_request.requested_by)
+        .select_related('user')
+    )
+
+    same_district = [d for d in donors if d.district == blood_request.district]
+    elsewhere = [d for d in donors if d.district != blood_request.district]
+    return same_district + elsewhere
+
+
+def notify_matching_donors(blood_request):
+    donors = matching_donors(blood_request)
+    if not donors:
+        return 0
+
+    message = (
+        f'{blood_request.get_urgency_display()}: {blood_request.units} unit(s) of '
+        f'{blood_request.blood_group} needed at {blood_request.hospital}, '
+        f'{blood_request.district}.'
+    )
+    Notification.objects.bulk_create([
+        Notification(recipient=donor.user, message=message) for donor in donors
+    ])
+    return len(donors)

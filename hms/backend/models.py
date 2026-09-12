@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -455,3 +455,127 @@ class DocumentAccessLog(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValueError('Access log entries cannot be deleted.')
+
+
+DISTRICTS = [
+    'Dhaka', 'Chattogram', 'Khulna', 'Rajshahi', 'Sylhet',
+    'Barishal', 'Rangpur', 'Mymensingh', 'Comilla', 'Gazipur',
+]
+
+COMPATIBLE_DONORS = {
+    'O-': ['O-'],
+    'O+': ['O-', 'O+'],
+    'A-': ['O-', 'A-'],
+    'A+': ['O-', 'O+', 'A-', 'A+'],
+    'B-': ['O-', 'B-'],
+    'B+': ['O-', 'O+', 'B-', 'B+'],
+    'AB-': ['O-', 'A-', 'B-', 'AB-'],
+    'AB+': ['O-', 'O+', 'A-', 'A+', 'B-', 'B+', 'AB-', 'AB+'],
+}
+
+DONATION_COOLDOWN_DAYS = 90
+
+
+class Donor(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='donor')
+    blood_group = models.CharField(max_length=5, choices=Patient.BloodGroup.choices)
+    district = models.CharField(max_length=50, choices=[(d, d) for d in DISTRICTS])
+    area = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=20, validators=[PHONE_VALIDATOR])
+    is_available = models.BooleanField(default=True)
+    last_donation_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['district', 'blood_group']
+
+    def __str__(self):
+        return f'{self.user.get_full_name() or self.user.username} ({self.blood_group})'
+
+    @property
+    def available_from(self):
+        if not self.last_donation_date:
+            return None
+        return self.last_donation_date + timedelta(days=DONATION_COOLDOWN_DAYS)
+
+    @property
+    def can_donate(self):
+        if not self.is_available:
+            return False
+        if not self.last_donation_date:
+            return True
+        return date.today() >= self.available_from
+
+
+class BloodRequest(models.Model):
+    class Urgency(models.TextChoices):
+        ROUTINE = 'routine', 'Routine'
+        URGENT = 'urgent', 'Urgent'
+        CRITICAL = 'critical', 'Critical'
+
+    class Status(models.TextChoices):
+        OPEN = 'open', 'Open'
+        FULFILLED = 'fulfilled', 'Fulfilled'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    requested_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='blood_requests')
+    blood_group = models.CharField(max_length=5, choices=Patient.BloodGroup.choices)
+    units = models.PositiveIntegerField(default=1)
+    hospital = models.CharField(max_length=200)
+    district = models.CharField(max_length=50, choices=[(d, d) for d in DISTRICTS])
+    needed_by = models.DateTimeField()
+    urgency = models.CharField(max_length=20, choices=Urgency.choices, default=Urgency.URGENT)
+    note = models.CharField(max_length=300, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+    verified_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='verified_requests')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.units} unit(s) of {self.blood_group} at {self.hospital}'
+
+    @property
+    def accepted_count(self):
+        return self.responses.filter(reply=DonorResponse.Reply.YES).count()
+
+
+class DonorResponse(models.Model):
+    class Reply(models.TextChoices):
+        YES = 'yes', 'Can donate'
+        NO = 'no', 'Cannot donate'
+
+    request = models.ForeignKey(BloodRequest, on_delete=models.CASCADE, related_name='responses')
+    donor = models.ForeignKey(Donor, on_delete=models.CASCADE, related_name='responses')
+    reply = models.CharField(max_length=10, choices=Reply.choices)
+    responded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-responded_at']
+        unique_together = [('request', 'donor')]
+
+    def __str__(self):
+        return f'{self.donor} -> {self.get_reply_display()}'
+
+
+class DonationRecord(models.Model):
+    donor = models.ForeignKey(Donor, on_delete=models.CASCADE, related_name='donations')
+    request = models.ForeignKey(
+        BloodRequest, on_delete=models.SET_NULL, null=True, blank=True, related_name='donations')
+    donated_on = models.DateField()
+    hospital = models.CharField(max_length=200, blank=True)
+    units = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['-donated_on']
+
+    def __str__(self):
+        return f'{self.donor} on {self.donated_on}'
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        if not self.donor.last_donation_date or self.donated_on > self.donor.last_donation_date:
+            self.donor.last_donation_date = self.donated_on
+            self.donor.save(update_fields=['last_donation_date'])

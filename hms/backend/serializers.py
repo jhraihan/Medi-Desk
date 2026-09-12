@@ -10,10 +10,14 @@ from .models import (
     Appointment,
     Bill,
     BillItem,
+    BloodRequest,
     Department,
     Doctor,
     DocumentAccessLog,
     DocumentShare,
+    DonationRecord,
+    Donor,
+    DonorResponse,
     MedicalDocument,
     Medicine,
     Notification,
@@ -295,3 +299,97 @@ class DocumentAccessLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = DocumentAccessLog
         fields = ['id', 'document', 'viewed_by', 'viewed_by_name', 'viewed_at']
+
+
+class DonorSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(source='user.get_full_name', read_only=True)
+    can_donate = serializers.BooleanField(read_only=True)
+    available_from = serializers.DateField(read_only=True)
+
+    class Meta:
+        model = Donor
+        fields = [
+            'id', 'blood_group', 'district', 'area', 'phone', 'is_available',
+            'last_donation_date', 'can_donate', 'available_from', 'name', 'created_at',
+        ]
+        read_only_fields = ['created_at', 'last_donation_date']
+
+
+class PublicDonorSerializer(serializers.ModelSerializer):
+    """Deliberately omits phone and full name. Contact details are revealed only
+    after a donor accepts a specific request."""
+
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+
+    class Meta:
+        model = Donor
+        fields = ['id', 'first_name', 'blood_group', 'district', 'area']
+
+
+class BloodRequestSerializer(serializers.ModelSerializer):
+    requested_by_name = serializers.CharField(source='requested_by.get_full_name', read_only=True)
+    accepted_count = serializers.IntegerField(read_only=True)
+    is_mine = serializers.SerializerMethodField()
+    my_reply = serializers.SerializerMethodField()
+
+    class Meta:
+        model = BloodRequest
+        fields = [
+            'id', 'blood_group', 'units', 'hospital', 'district', 'needed_by',
+            'urgency', 'note', 'status', 'created_at',
+            'requested_by', 'requested_by_name', 'accepted_count', 'is_mine', 'my_reply',
+        ]
+        read_only_fields = ['created_at', 'requested_by', 'status']
+
+    def get_is_mine(self, obj):
+        request = self.context.get('request')
+        return bool(request and obj.requested_by_id == request.user.id)
+
+    def get_my_reply(self, obj):
+        request = self.context.get('request')
+        donor = getattr(getattr(request, 'user', None), 'donor', None)
+        if not donor:
+            return None
+        response = obj.responses.filter(donor=donor).first()
+        return response.reply if response else None
+
+    def validate_needed_by(self, when):
+        if when < timezone.now():
+            raise serializers.ValidationError('The needed-by time is already past.')
+        return when
+
+    def validate_units(self, units):
+        if units > 10:
+            raise serializers.ValidationError('Request 10 units or fewer.')
+        return units
+
+
+class DonorResponseSerializer(serializers.ModelSerializer):
+    donor_name = serializers.CharField(source='donor.user.get_full_name', read_only=True)
+    donor_phone = serializers.SerializerMethodField()
+    blood_group = serializers.CharField(source='donor.blood_group', read_only=True)
+
+    class Meta:
+        model = DonorResponse
+        fields = ['id', 'request', 'donor', 'donor_name', 'donor_phone',
+                  'blood_group', 'reply', 'responded_at']
+        read_only_fields = ['responded_at', 'donor']
+
+    def get_donor_phone(self, obj):
+        if obj.reply != DonorResponse.Reply.YES:
+            return None
+        request = self.context.get('request')
+        viewer = getattr(request, 'user', None)
+        if not viewer:
+            return None
+        if viewer == obj.request.requested_by or viewer == obj.donor.user:
+            return obj.donor.phone
+        return None
+
+
+class DonationRecordSerializer(serializers.ModelSerializer):
+    donor_name = serializers.CharField(source='donor.user.get_full_name', read_only=True)
+
+    class Meta:
+        model = DonationRecord
+        fields = ['id', 'donor', 'donor_name', 'request', 'donated_on', 'hospital', 'units']
