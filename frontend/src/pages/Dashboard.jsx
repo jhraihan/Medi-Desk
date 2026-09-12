@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { fetchDashboard } from "../api.js";
 import { useAuth } from "../auth-context.js";
-import { Alert, Card, PageHeader, StatTile } from "../components/index.js";
+import { Alert,
+  Loading, Card, Mascot, StatTile } from "../components/index.js";
 
 const TILES = {
   today_appointments: { label: "Appointments today", icon: CalendarCheck },
@@ -44,6 +45,21 @@ function format(key, value) {
   return value;
 }
 
+function greetingFor(role) {
+  const hour = new Date().getHours();
+  const hello = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  const lines = {
+    patient: { mood: "caring", line: "Here is your care at a glance." },
+    doctor: { mood: "calm", line: "Your clinic for today." },
+    receptionist: { mood: "happy", line: "The front desk, at a glance." },
+    pharmacist: { mood: "calm", line: "Dispensing and stock today." },
+    admin: { mood: "happy", line: "How the hospital is running today." },
+  };
+
+  return { hello, ...(lines[role] ?? { mood: "happy", line: "Here is how things look today." }) };
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
@@ -60,21 +76,29 @@ export default function Dashboard() {
   }, []);
 
   const { role, ...stats } = data ?? {};
+  const greeting = greetingFor(role);
   const tiles = Object.entries(stats).filter(([key]) => key !== "appointments_by_status");
   const byStatus = stats.appointments_by_status ?? [];
   const peak = Math.max(1, ...byStatus.map((row) => row.count));
 
   return (
     <>
-      <PageHeader
-        eyebrow={role ? `Signed in as ${role}` : "Loading"}
-        title={`Welcome back, ${user?.first_name || user?.username || ""}`}
-        subtitle="Here is how things look today."
-      />
+      <Card className="animate-rise sheen mb-6 flex flex-wrap items-center gap-5 p-6">
+        <Mascot size={88} mood={greeting.mood} />
+        <div className="min-w-0">
+          <span className="pill bg-brand-100 text-brand-700">
+            {role ? `Signed in as ${role}` : "Loading"}
+          </span>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink-900">
+            {greeting.hello}, {user?.first_name || user?.username || ""}
+          </h1>
+          <p className="mt-1 text-sm text-ink-500">{greeting.line}</p>
+        </div>
+      </Card>
 
       <Alert>{error}</Alert>
 
-      {!data && !error && <p className="text-sm text-ink-500">Loading your overview…</p>}
+      {!data && !error && <Loading message="Building your overview…" />}
 
       {data && (
         <>

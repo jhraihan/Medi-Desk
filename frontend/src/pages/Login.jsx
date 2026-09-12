@@ -3,7 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { Activity, CalendarDays, HeartPulse, ShieldCheck } from "lucide-react";
 import { fetchMe, login } from "../api.js";
 import { useAuth } from "../auth-context.js";
-import { Alert, Button, Input } from "../components/index.js";
+import { Alert, Button, Input, Mascot } from "../components/index.js";
 
 const DEMO_ACCOUNTS = [
   { username: "hospital_admin", label: "Admin", hint: "Everything" },
@@ -63,6 +63,7 @@ export default function Login() {
           </div>
 
           <div className="animate-rise">
+            <Mascot size={104} mood="caring" className="mb-4 -ml-2" />
             <h2 className="text-3xl font-semibold leading-tight">
               Care that respects
               <br />

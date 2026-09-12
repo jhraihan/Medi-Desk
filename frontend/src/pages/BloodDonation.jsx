@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   EmptyState,
+  Loading,
   IconButton,
   Input,
   PageHeader,
@@ -322,11 +323,11 @@ export default function BloodDonation() {
         </Card>
       )}
 
-      {isLoading && <p className="text-sm text-ink-500">Loading…</p>}
+      {isLoading && <Loading message="Loading the donor network…" />}
 
       {!isLoading && requests.length === 0 && (
         <EmptyState
-          icon={Droplet}
+          mood="caring"
           title="No open requests"
           message="When someone nearby needs blood you can give, it appears here."
         />

@@ -18,6 +18,7 @@ import {
   Button,
   Card,
   EmptyState,
+  Loading,
   IconButton,
   Input,
   PageHeader,
@@ -281,11 +282,11 @@ export default function Records() {
         </Card>
       )}
 
-      {isLoading && <p className="text-sm text-ink-500">Loading…</p>}
+      {isLoading && <Loading message="Fetching your records…" />}
 
       {!isLoading && documents.length === 0 && (
         <EmptyState
-          icon={FileText}
+          mood="caring"
           title={isPatient ? "No records yet" : "Nothing shared with you"}
           message={
             isPatient

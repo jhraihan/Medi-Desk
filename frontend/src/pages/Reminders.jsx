@@ -13,6 +13,7 @@ import {
   Button,
   Card,
   EmptyState,
+  Loading,
   IconButton,
   Input,
   PageHeader,
@@ -227,11 +228,11 @@ export default function Reminders() {
         </Card>
       )}
 
-      {isLoading && <p className="text-sm text-ink-500">Loading…</p>}
+      {isLoading && <Loading message="Checking today's doses…" />}
 
       {!isLoading && doses.length === 0 && (
         <EmptyState
-          icon={Pill}
+          mood="happy"
           title="Nothing due today"
           message="Add a medicine and its times, and each dose will appear here on the day."
         />

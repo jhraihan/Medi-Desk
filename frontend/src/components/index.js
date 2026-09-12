@@ -5,6 +5,8 @@ export { default as Card } from "./Card.jsx";
 export { default as ConfirmDialog } from "./ConfirmDialog.jsx";
 export { default as EmptyState } from "./EmptyState.jsx";
 export { default as IconButton } from "./IconButton.jsx";
+export { default as Loading } from "./Loading.jsx";
+export { default as Mascot } from "./Mascot.jsx";
 export { default as Input } from "./Input.jsx";
 export { default as PageHeader } from "./PageHeader.jsx";
 export { default as SectionTitle } from "./SectionTitle.jsx";

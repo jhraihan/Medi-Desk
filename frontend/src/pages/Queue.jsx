@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { PlayCircle, CheckCircle2, Users } from "lucide-react";
+import { PlayCircle, CheckCircle2 } from "lucide-react";
 import {
   completeAppointment,
   doctorsApi,
@@ -171,7 +171,7 @@ export default function Queue() {
 
       {board && rest.length === 0 && !current && (
         <EmptyState
-          icon={Users}
+          mood="calm"
           title="Nobody is waiting"
           message="Patients appear here as soon as reception checks them in."
         />

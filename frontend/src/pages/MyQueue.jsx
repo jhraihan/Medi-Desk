@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CalendarDays, Clock, Users } from "lucide-react";
+import { Clock, Users } from "lucide-react";
 import { fetchMyQueue } from "../api.js";
 import { Alert, Badge, Card, EmptyState, PageHeader } from "../components/index.js";
 
@@ -55,7 +55,7 @@ export default function MyQueue() {
 
       {queue && !appointment && (
         <EmptyState
-          icon={CalendarDays}
+          mood="calm"
           title="Nothing booked for today"
           message="When you have an appointment today, your position will appear here."
         />
