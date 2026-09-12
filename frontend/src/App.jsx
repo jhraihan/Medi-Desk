@@ -5,6 +5,7 @@ import BloodDonation from "./pages/BloodDonation";
 import Dashboard from "./pages/Dashboard";
 import MyQueue from "./pages/MyQueue";
 import Records from "./pages/Records";
+import Reminders from "./pages/Reminders";
 import Queue from "./pages/Queue";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -58,6 +59,10 @@ function App() {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/my-queue" element={<MyQueue />} />
               <Route path="/blood" element={<BloodDonation />} />
+
+              <Route element={<RoleRoute allow={["patient"]} />}>
+                <Route path="/reminders" element={<Reminders />} />
+              </Route>
 
               <Route element={<RoleRoute allow={["patient", "doctor", "admin"]} />}>
                 <Route path="/records" element={<Records />} />

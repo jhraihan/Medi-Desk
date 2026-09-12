@@ -265,6 +265,26 @@ export async function closeBloodRequest(id, status = "fulfilled") {
 
 export const donorsApi = createCrudApi("donors");
 export const bloodRequestsApi = createCrudApi("blood-requests");
+export async function fetchTodayDoses() {
+  const response = await API.get("doses/today/");
+  return response.data;
+}
+
+export async function markDose(id, state) {
+  const response = await API.post(`doses/${id}/${state}/`);
+  return response.data;
+}
+
+export async function remindersFromPrescription(prescriptionId, timesPerDay) {
+  const response = await API.post("medication-schedules/from-prescription/", {
+    prescription: prescriptionId,
+    times_per_day: timesPerDay,
+  });
+  return response.data;
+}
+
+export const medicationSchedulesApi = createCrudApi("medication-schedules");
+export const careContactsApi = createCrudApi("care-contacts");
 export const departmentsApi = createCrudApi("departments");
 export const doctorsApi = createCrudApi("doctors");
 export const patientsApi = createCrudApi("patients");

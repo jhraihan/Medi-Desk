@@ -11,6 +11,7 @@ from .models import (
     Bill,
     BillItem,
     BloodRequest,
+    CareContact,
     Department,
     Doctor,
     DocumentAccessLog,
@@ -19,6 +20,8 @@ from .models import (
     Donor,
     DonorResponse,
     MedicalDocument,
+    MedicationDose,
+    MedicationSchedule,
     Medicine,
     Notification,
     Patient,
@@ -393,3 +396,62 @@ class DonationRecordSerializer(serializers.ModelSerializer):
     class Meta:
         model = DonationRecord
         fields = ['id', 'donor', 'donor_name', 'request', 'donated_on', 'hospital', 'units']
+
+
+class MedicationDoseSerializer(serializers.ModelSerializer):
+    medicine_name = serializers.CharField(source='schedule.medicine_name', read_only=True)
+    dosage = serializers.CharField(source='schedule.dosage', read_only=True)
+    instructions = serializers.CharField(source='schedule.instructions', read_only=True)
+
+    class Meta:
+        model = MedicationDose
+        fields = ['id', 'schedule', 'medicine_name', 'dosage', 'instructions',
+                  'due_at', 'state', 'confirmed_at']
+        read_only_fields = ['confirmed_at', 'schedule']
+
+
+class MedicationScheduleSerializer(serializers.ModelSerializer):
+    adherence = serializers.IntegerField(read_only=True)
+    dose_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MedicationSchedule
+        fields = ['id', 'medicine', 'medicine_name', 'dosage', 'instructions', 'times',
+                  'start_date', 'end_date', 'is_active', 'prescription',
+                  'adherence', 'dose_count', 'created_at']
+        read_only_fields = ['created_at', 'prescription']
+
+    def get_dose_count(self, obj):
+        return obj.doses.count()
+
+    def validate_times(self, times):
+        if not times:
+            raise serializers.ValidationError('Add at least one time of day.')
+        if len(times) > 6:
+            raise serializers.ValidationError('Six times a day is the maximum.')
+        for clock in times:
+            try:
+                hour, minute = (int(part) for part in str(clock).split(':'))
+            except ValueError:
+                raise serializers.ValidationError('Use HH:MM for each time.') from None
+            if not (0 <= hour < 24 and 0 <= minute < 60):
+                raise serializers.ValidationError(f'{clock} is not a valid time.')
+        return times
+
+    def validate(self, attrs):
+        times = attrs.get('times', getattr(self.instance, 'times', None))
+        if not times:
+            raise serializers.ValidationError({'times': 'Add at least one time of day.'})
+
+        start = attrs.get('start_date') or getattr(self.instance, 'start_date', None)
+        end = attrs.get('end_date') or getattr(self.instance, 'end_date', None)
+        if start and end and end < start:
+            raise serializers.ValidationError({'end_date': 'The end date is before the start date.'})
+        return attrs
+
+
+class CareContactSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CareContact
+        fields = ['id', 'name', 'phone', 'relationship', 'user',
+                  'alert_after_misses', 'consent_given']

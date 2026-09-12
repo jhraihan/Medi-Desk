@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
@@ -12,6 +12,8 @@ from .models import (
     BillItem,
     Doctor,
     Donor,
+    MedicationDose,
+    MedicationSchedule,
     Medicine,
     MedicineStock,
     Notification,
@@ -313,3 +315,94 @@ def notify_matching_donors(blood_request):
         Notification(recipient=donor.user, message=message) for donor in donors
     ])
     return len(donors)
+
+
+MISSED_AFTER_MINUTES = 120
+
+
+def build_doses(schedule):
+    schedule.doses.filter(state=MedicationDose.State.PENDING).delete()
+
+    doses = []
+    day = schedule.start_date
+    while day <= schedule.end_date:
+        for clock in schedule.times:
+            hour, minute = (int(part) for part in clock.split(':'))
+            due = timezone.make_aware(datetime.combine(day, time(hour, minute)))
+            doses.append(MedicationDose(schedule=schedule, due_at=due))
+        day += timedelta(days=1)
+
+    MedicationDose.objects.bulk_create(doses, ignore_conflicts=True)
+    return len(doses)
+
+
+def mark_overdue_doses(patient):
+    cutoff = timezone.now() - timedelta(minutes=MISSED_AFTER_MINUTES)
+    overdue = MedicationDose.objects.filter(
+        schedule__patient=patient,
+        state=MedicationDose.State.PENDING,
+        due_at__lt=cutoff,
+    )
+    count = overdue.update(state=MedicationDose.State.MISSED)
+    if count:
+        check_missed_streak(patient)
+    return count
+
+
+def check_missed_streak(patient):
+    contact = getattr(patient, 'care_contact', None)
+    if not contact or not contact.consent_given:
+        return
+
+    since = timezone.now() - timedelta(days=7)
+    for schedule in patient.medication_schedules.filter(is_active=True):
+        misses = schedule.doses.filter(
+            state=MedicationDose.State.MISSED, due_at__gte=since).count()
+
+        if misses < contact.alert_after_misses:
+            continue
+
+        message = (
+            f'{patient} has missed {misses} doses of {schedule.medicine_name} this week.'
+        )
+        already_sent = Notification.objects.filter(
+            recipient=contact.user, message=message, created_at__gte=since).exists()
+
+        if contact.user and not already_sent:
+            Notification.objects.create(recipient=contact.user, message=message)
+
+
+def schedule_from_prescription(prescription, times_per_day=2):
+    default_times = {1: ['09:00'], 2: ['09:00', '21:00'], 3: ['08:00', '14:00', '20:00']}
+    times = default_times.get(times_per_day, ['09:00'])
+    created = []
+
+    for item in prescription.items.select_related('medicine'):
+        days = parse_duration_days(item.duration)
+        schedule = MedicationSchedule.objects.create(
+            patient=prescription.appointment.patient,
+            medicine=item.medicine,
+            medicine_name=item.medicine.name,
+            dosage=item.dosage,
+            instructions=item.instructions,
+            times=times,
+            start_date=date.today(),
+            end_date=date.today() + timedelta(days=days - 1),
+            prescription=prescription,
+        )
+        build_doses(schedule)
+        created.append(schedule)
+
+    return created
+
+
+def parse_duration_days(text):
+    digits = ''.join(char for char in str(text) if char.isdigit())
+    if not digits:
+        return 7
+    days = int(digits)
+    if 'week' in str(text).lower():
+        days *= 7
+    if 'month' in str(text).lower():
+        days *= 30
+    return max(1, min(days, 180))

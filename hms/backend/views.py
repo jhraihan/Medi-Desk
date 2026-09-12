@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
@@ -22,6 +22,7 @@ from .models import (
     Appointment,
     Bill,
     BloodRequest,
+    CareContact,
     Department,
     Doctor,
     DocumentAccessLog,
@@ -29,6 +30,8 @@ from .models import (
     Donor,
     DonorResponse,
     MedicalDocument,
+    MedicationDose,
+    MedicationSchedule,
     Medicine,
     Notification,
     Patient,
@@ -49,6 +52,7 @@ from .serializers import (
     AppointmentSerializer,
     BillSerializer,
     BloodRequestSerializer,
+    CareContactSerializer,
     DepartmentSerializer,
     DoctorSerializer,
     DocumentAccessLogSerializer,
@@ -56,6 +60,8 @@ from .serializers import (
     DonorResponseSerializer,
     DonorSerializer,
     MedicalDocumentSerializer,
+    MedicationDoseSerializer,
+    MedicationScheduleSerializer,
     MedicineSerializer,
     NotificationSerializer,
     PatientSerializer,
@@ -67,12 +73,15 @@ from .serializers import (
 from .services import (
     DispenseError,
     available_slots,
+    build_doses,
     dashboard_for,
     dispense_prescription,
+    mark_overdue_doses,
     notify_matching_donors,
     queue_for_doctor,
     queue_state,
     refresh_average_consult_time,
+    schedule_from_prescription,
 )
 
 User = get_user_model()
@@ -622,3 +631,130 @@ class BloodRequestViewSet(viewsets.ModelViewSet):
         blood_request.save(update_fields=['status'])
         return Response(
             BloodRequestSerializer(blood_request, context={'request': request}).data)
+
+
+class MedicationScheduleViewSet(viewsets.ModelViewSet):
+    serializer_class = MedicationScheduleSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = MedicationSchedule.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return MedicationSchedule.objects.none()
+        return (
+            MedicationSchedule.objects
+            .filter(patient__user=self.request.user)
+            .prefetch_related('doses')
+        )
+
+    def perform_create(self, serializer):
+        patient = getattr(self.request.user, 'patient', None)
+        if not patient:
+            raise ValidationError('Only a patient can keep a medicine schedule.')
+        schedule = serializer.save(patient=patient)
+        build_doses(schedule)
+
+    def perform_update(self, serializer):
+        schedule = serializer.save()
+        build_doses(schedule)
+
+    @extend_schema(request=None, responses=MedicationScheduleSerializer(many=True))
+    @action(detail=False, methods=['post'], url_path='from-prescription')
+    def from_prescription(self, request):
+        patient = getattr(request.user, 'patient', None)
+        if not patient:
+            return Response({'detail': 'Only a patient can do this.'}, status=400)
+
+        prescription = Prescription.objects.filter(
+            pk=request.data.get('prescription'), appointment__patient=patient).first()
+        if not prescription:
+            return Response({'detail': 'Prescription not found.'}, status=404)
+        if prescription.schedules.exists():
+            return Response({'detail': 'Reminders already exist for this prescription.'}, status=400)
+
+        created = schedule_from_prescription(
+            prescription, int(request.data.get('times_per_day', 2)))
+        return Response(MedicationScheduleSerializer(created, many=True).data, status=201)
+
+
+class MedicationDoseViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    serializer_class = MedicationDoseSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = MedicationDose.objects.none()
+    filterset_fields = ['state', 'schedule']
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return MedicationDose.objects.none()
+        return (
+            MedicationDose.objects
+            .filter(schedule__patient__user=self.request.user)
+            .select_related('schedule')
+        )
+
+    def list(self, request, *args, **kwargs):
+        patient = getattr(request.user, 'patient', None)
+        if patient:
+            mark_overdue_doses(patient)
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(responses=dict)
+    @action(detail=False, methods=['get'])
+    def today(self, request):
+        patient = getattr(request.user, 'patient', None)
+        if not patient:
+            return Response({'doses': [], 'adherence': None})
+
+        mark_overdue_doses(patient)
+        today = timezone.localdate()
+        doses = self.get_queryset().filter(due_at__date=today)
+
+        overall = self.get_queryset().exclude(state=MedicationDose.State.PENDING)
+        total = overall.count()
+        taken = overall.filter(state=MedicationDose.State.TAKEN).count()
+
+        return Response({
+            'doses': MedicationDoseSerializer(doses, many=True).data,
+            'adherence': round(taken / total * 100) if total else None,
+            'taken': taken,
+            'total': total,
+        })
+
+    @extend_schema(request=None, responses=MedicationDoseSerializer)
+    @action(detail=True, methods=['post'])
+    def taken(self, request, pk=None):
+        return self._set_state(request, pk, MedicationDose.State.TAKEN)
+
+    @extend_schema(request=None, responses=MedicationDoseSerializer)
+    @action(detail=True, methods=['post'])
+    def skipped(self, request, pk=None):
+        return self._set_state(request, pk, MedicationDose.State.SKIPPED)
+
+    def _set_state(self, request, pk, state):
+        dose = self.get_object()
+        if dose.due_at > timezone.now() + timedelta(hours=1):
+            return Response({'detail': 'That dose is not due yet.'}, status=400)
+
+        dose.state = state
+        dose.confirmed_at = timezone.now()
+        dose.save(update_fields=['state', 'confirmed_at'])
+        return Response(MedicationDoseSerializer(dose).data)
+
+
+class CareContactViewSet(viewsets.ModelViewSet):
+    serializer_class = CareContactSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = CareContact.objects.none()
+
+    def get_queryset(self):
+        if getattr(self, 'swagger_fake_view', False):
+            return CareContact.objects.none()
+        return CareContact.objects.filter(patient__user=self.request.user)
+
+    def perform_create(self, serializer):
+        patient = getattr(self.request.user, 'patient', None)
+        if not patient:
+            raise ValidationError('Only a patient can add a care contact.')
+        if hasattr(patient, 'care_contact'):
+            raise ValidationError('You already have a care contact.')
+        serializer.save(patient=patient)

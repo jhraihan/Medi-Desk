@@ -15,6 +15,7 @@ from .models import (
     AuditLog,
     Bill,
     BloodRequest,
+    CareContact,
     Doctor,
     DoctorSchedule,
     DocumentAccessLog,
@@ -22,6 +23,8 @@ from .models import (
     DonationRecord,
     Donor,
     MedicalDocument,
+    MedicationDose,
+    MedicationSchedule,
     Medicine,
     MedicineStock,
     Notification,
@@ -31,7 +34,13 @@ from .models import (
     PrescriptionMedicine,
     User,
 )
-from .services import matching_donors, queue_position, queue_state
+from .services import (
+    check_missed_streak,
+    matching_donors,
+    parse_duration_days,
+    queue_position,
+    queue_state,
+)
 
 
 def make_user(username, role, **extra):
@@ -954,5 +963,229 @@ class DonorNetworkTests(APITestCase):
         self.client.force_authenticate(self.a_pos.user)
         response = self.client.post('/api/v1/donors/', {
             'blood_group': 'A+', 'district': 'Dhaka', 'phone': '0170000000',
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+
+class MedicationReminderTests(APITestCase):
+    def setUp(self):
+        self.user = make_user('medpatient', User.Role.PATIENT)
+        self.patient = Patient.objects.create(
+            user=self.user, date_of_birth=date(1960, 4, 4), gender='male',
+            blood_group='O+', address='1 Road', phone='0100000021')
+        self.client.force_authenticate(self.user)
+
+    def _schedule(self, days=7, times=None):
+        return self.client.post('/api/v1/medication-schedules/', {
+            'medicine_name': 'Metformin',
+            'dosage': '1 tablet',
+            'times': ['09:00', '21:00'] if times is None else times,
+            'start_date': date.today().isoformat(),
+            'end_date': (date.today() + timedelta(days=days - 1)).isoformat(),
+        }, format='json')
+
+    def test_a_schedule_generates_one_dose_per_time_per_day(self):
+        response = self._schedule(days=7)
+        self.assertEqual(response.status_code, 201)
+
+        schedule = MedicationSchedule.objects.get()
+        self.assertEqual(schedule.doses.count(), 14)
+
+    def test_three_times_a_day_generates_three_doses_daily(self):
+        self._schedule(days=3, times=['08:00', '14:00', '20:00'])
+        self.assertEqual(MedicationDose.objects.count(), 9)
+
+    def test_times_must_be_valid(self):
+        response = self._schedule(times=['25:00'])
+        self.assertEqual(response.status_code, 400)
+
+    def test_at_least_one_time_is_required(self):
+        response = self._schedule(times=[])
+        self.assertEqual(response.status_code, 400)
+
+    def test_end_date_cannot_precede_start_date(self):
+        response = self.client.post('/api/v1/medication-schedules/', {
+            'medicine_name': 'Metformin',
+            'dosage': '1 tablet',
+            'times': ['09:00'],
+            'start_date': date.today().isoformat(),
+            'end_date': (date.today() - timedelta(days=2)).isoformat(),
+        }, format='json')
+        self.assertEqual(response.status_code, 400)
+
+    def test_marking_a_dose_taken(self):
+        self._schedule()
+        dose = MedicationDose.objects.filter(due_at__lte=timezone.now()).first()
+        if not dose:
+            dose = MedicationDose.objects.first()
+            dose.due_at = timezone.now() - timedelta(minutes=5)
+            dose.save()
+
+        response = self.client.post(f'/api/v1/doses/{dose.id}/taken/')
+        self.assertEqual(response.status_code, 200)
+
+        dose.refresh_from_db()
+        self.assertEqual(dose.state, MedicationDose.State.TAKEN)
+        self.assertIsNotNone(dose.confirmed_at)
+
+    def test_a_future_dose_cannot_be_marked_taken(self):
+        self._schedule()
+        future = MedicationDose.objects.filter(
+            due_at__gt=timezone.now() + timedelta(hours=2)).first()
+
+        response = self.client.post(f'/api/v1/doses/{future.id}/taken/')
+        self.assertEqual(response.status_code, 400)
+
+    def test_overdue_doses_become_missed_on_read(self):
+        self._schedule()
+        stale = MedicationDose.objects.first()
+        stale.due_at = timezone.now() - timedelta(hours=5)
+        stale.save()
+
+        self.client.get('/api/v1/doses/today/')
+
+        stale.refresh_from_db()
+        self.assertEqual(stale.state, MedicationDose.State.MISSED)
+
+    def test_adherence_counts_only_resolved_doses(self):
+        self._schedule()
+        doses = list(MedicationDose.objects.all()[:4])
+        for dose in doses[:3]:
+            dose.state = MedicationDose.State.TAKEN
+            dose.save()
+        doses[3].state = MedicationDose.State.MISSED
+        doses[3].save()
+
+        schedule = MedicationSchedule.objects.get()
+        self.assertEqual(schedule.adherence, 75)
+
+    def test_patients_only_see_their_own_doses(self):
+        self._schedule()
+
+        other = make_user('othermed', User.Role.PATIENT)
+        Patient.objects.create(
+            user=other, date_of_birth=date(1975, 1, 1), gender='female',
+            blood_group='A+', address='2 Road', phone='0100000022')
+
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get('/api/v1/doses/').data['results'], [])
+
+    def test_reminders_can_be_built_from_a_prescription(self):
+        doctor_user = make_user('meddoc', User.Role.DOCTOR)
+        doctor = Doctor.objects.create(
+            user=doctor_user, specialization='GP', phone='0200000021', experience=5)
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=doctor,
+            appointment_date=timezone.now() + timedelta(days=1))
+        prescription = Prescription.objects.create(
+            appointment=appointment, diagnosis='Diabetes review')
+        medicine = Medicine.objects.create(name='Metformin', unit='box')
+        PrescriptionMedicine.objects.create(
+            prescription=prescription, medicine=medicine,
+            dosage='1 tablet', duration='5 days', quantity=1)
+
+        self.client.force_authenticate(self.user)
+        response = self.client.post('/api/v1/medication-schedules/from-prescription/',
+                                    {'prescription': prescription.id, 'times_per_day': 2},
+                                    format='json')
+
+        self.assertEqual(response.status_code, 201)
+        schedule = MedicationSchedule.objects.get()
+        self.assertEqual(schedule.medicine_name, 'Metformin')
+        self.assertEqual(schedule.doses.count(), 10)
+
+    def test_building_from_the_same_prescription_twice_is_refused(self):
+        doctor_user = make_user('meddoc2', User.Role.DOCTOR)
+        doctor = Doctor.objects.create(
+            user=doctor_user, specialization='GP', phone='0200000022', experience=5)
+        appointment = Appointment.objects.create(
+            patient=self.patient, doctor=doctor,
+            appointment_date=timezone.now() + timedelta(days=2))
+        prescription = Prescription.objects.create(
+            appointment=appointment, diagnosis='Review')
+        medicine = Medicine.objects.create(name='Ibuprofen', unit='strip')
+        PrescriptionMedicine.objects.create(
+            prescription=prescription, medicine=medicine,
+            dosage='1 tablet', duration='3 days', quantity=1)
+
+        payload = {'prescription': prescription.id}
+        self.assertEqual(
+            self.client.post('/api/v1/medication-schedules/from-prescription/',
+                             payload, format='json').status_code, 201)
+        self.assertEqual(
+            self.client.post('/api/v1/medication-schedules/from-prescription/',
+                             payload, format='json').status_code, 400)
+
+    def test_duration_text_is_parsed_into_days(self):
+        self.assertEqual(parse_duration_days('5 days'), 5)
+        self.assertEqual(parse_duration_days('2 weeks'), 14)
+        self.assertEqual(parse_duration_days('1 month'), 30)
+        self.assertEqual(parse_duration_days('as needed'), 7)
+
+
+class CareContactTests(APITestCase):
+    def setUp(self):
+        self.user = make_user('carepatient', User.Role.PATIENT)
+        self.patient = Patient.objects.create(
+            user=self.user, date_of_birth=date(1950, 2, 2), gender='female',
+            blood_group='B+', address='3 Road', phone='0100000023')
+        self.relative = make_user('relative', User.Role.PATIENT)
+        self.client.force_authenticate(self.user)
+
+        self.schedule = MedicationSchedule.objects.create(
+            patient=self.patient, medicine_name='Metformin', dosage='1 tablet',
+            times=['09:00'], start_date=date.today() - timedelta(days=5),
+            end_date=date.today() + timedelta(days=5))
+
+    def _miss(self, count):
+        for index in range(count):
+            MedicationDose.objects.create(
+                schedule=self.schedule,
+                due_at=timezone.now() - timedelta(days=index + 1),
+                state=MedicationDose.State.MISSED)
+
+    def test_family_is_not_told_without_consent(self):
+        CareContact.objects.create(
+            patient=self.patient, name='Son', phone='0171111111',
+            user=self.relative, alert_after_misses=3, consent_given=False)
+        self._miss(4)
+
+        check_missed_streak(self.patient)
+        self.assertFalse(Notification.objects.filter(recipient=self.relative).exists())
+
+    def test_family_is_told_once_consent_is_given(self):
+        CareContact.objects.create(
+            patient=self.patient, name='Son', phone='0171111111',
+            user=self.relative, alert_after_misses=3, consent_given=True)
+        self._miss(4)
+
+        check_missed_streak(self.patient)
+        self.assertTrue(Notification.objects.filter(recipient=self.relative).exists())
+
+    def test_family_is_not_told_below_the_threshold(self):
+        CareContact.objects.create(
+            patient=self.patient, name='Son', phone='0171111111',
+            user=self.relative, alert_after_misses=3, consent_given=True)
+        self._miss(2)
+
+        check_missed_streak(self.patient)
+        self.assertFalse(Notification.objects.filter(recipient=self.relative).exists())
+
+    def test_the_same_alert_is_not_repeated(self):
+        CareContact.objects.create(
+            patient=self.patient, name='Son', phone='0171111111',
+            user=self.relative, alert_after_misses=3, consent_given=True)
+        self._miss(4)
+
+        check_missed_streak(self.patient)
+        check_missed_streak(self.patient)
+        self.assertEqual(Notification.objects.filter(recipient=self.relative).count(), 1)
+
+    def test_a_patient_has_only_one_care_contact(self):
+        self.client.post('/api/v1/care-contacts/', {
+            'name': 'Son', 'phone': '0171111111', 'consent_given': True,
+        }, format='json')
+        response = self.client.post('/api/v1/care-contacts/', {
+            'name': 'Daughter', 'phone': '0172222222', 'consent_given': True,
         }, format='json')
         self.assertEqual(response.status_code, 400)

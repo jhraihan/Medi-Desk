@@ -1,6 +1,7 @@
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import {
   Activity,
+  BellRing,
   CalendarDays,
   CreditCard,
   Droplet,
@@ -22,6 +23,7 @@ const NAV = [
   { to: "/prescriptions", label: "Prescriptions", icon: FileText },
   { to: "/records", label: "Records", icon: FolderHeart, roles: ["patient", "doctor", "admin"] },
   { to: "/blood", label: "Blood", icon: Droplet },
+  { to: "/reminders", label: "Reminders", icon: BellRing, roles: ["patient"] },
   { to: "/doctors", label: "Doctors", icon: Stethoscope },
   { to: "/patients", label: "Patients", icon: Users, roles: ["admin", "receptionist", "doctor"] },
   { to: "/medicines", label: "Medicines", icon: Pill, roles: ["admin", "doctor", "receptionist", "pharmacist"] },

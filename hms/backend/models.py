@@ -579,3 +579,71 @@ class DonationRecord(models.Model):
         if not self.donor.last_donation_date or self.donated_on > self.donor.last_donation_date:
             self.donor.last_donation_date = self.donated_on
             self.donor.save(update_fields=['last_donation_date'])
+
+
+class MedicationSchedule(models.Model):
+    patient = models.ForeignKey(Patient, on_delete=models.CASCADE, related_name='medication_schedules')
+    medicine = models.ForeignKey(
+        Medicine, on_delete=models.SET_NULL, null=True, blank=True, related_name='schedules')
+    medicine_name = models.CharField(max_length=200)
+    dosage = models.CharField(max_length=100)
+    instructions = models.CharField(max_length=255, blank=True)
+    times = models.JSONField(default=list)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    prescription = models.ForeignKey(
+        Prescription, on_delete=models.SET_NULL, null=True, blank=True, related_name='schedules')
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-start_date']
+
+    def __str__(self):
+        return f'{self.medicine_name} for {self.patient}'
+
+    @property
+    def adherence(self):
+        doses = self.doses.exclude(state=MedicationDose.State.PENDING)
+        total = doses.count()
+        if not total:
+            return None
+        taken = doses.filter(state=MedicationDose.State.TAKEN).count()
+        return round(taken / total * 100)
+
+
+class MedicationDose(models.Model):
+    class State(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        TAKEN = 'taken', 'Taken'
+        MISSED = 'missed', 'Missed'
+        SKIPPED = 'skipped', 'Skipped'
+
+    schedule = models.ForeignKey(MedicationSchedule, on_delete=models.CASCADE, related_name='doses')
+    due_at = models.DateTimeField(db_index=True)
+    state = models.CharField(max_length=10, choices=State.choices, default=State.PENDING)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['due_at']
+        unique_together = [('schedule', 'due_at')]
+
+    def __str__(self):
+        return f'{self.schedule.medicine_name} at {self.due_at:%d %b %H:%M}'
+
+
+class CareContact(models.Model):
+    patient = models.OneToOneField(Patient, on_delete=models.CASCADE, related_name='care_contact')
+    name = models.CharField(max_length=200)
+    phone = models.CharField(max_length=20, validators=[PHONE_VALIDATOR])
+    relationship = models.CharField(max_length=100, blank=True)
+    user = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='caring_for')
+    alert_after_misses = models.PositiveIntegerField(default=3)
+    consent_given = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f'{self.name} for {self.patient}'

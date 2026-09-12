@@ -10,6 +10,7 @@ from .views import (
     AppointmentViewSet,
     BillViewSet,
     BloodRequestViewSet,
+    CareContactViewSet,
     DashboardView,
     DepartmentViewSet,
     DoctorQueueView,
@@ -17,6 +18,8 @@ from .views import (
     DocumentShareViewSet,
     DonorViewSet,
     MedicalDocumentViewSet,
+    MedicationDoseViewSet,
+    MedicationScheduleViewSet,
     MedicineViewSet,
     MeView,
     MyQueueView,
@@ -38,6 +41,9 @@ router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'documents', MedicalDocumentViewSet)
 router.register(r'donors', DonorViewSet, basename='donor')
 router.register(r'blood-requests', BloodRequestViewSet)
+router.register(r'medication-schedules', MedicationScheduleViewSet, basename='medication-schedule')
+router.register(r'doses', MedicationDoseViewSet, basename='dose')
+router.register(r'care-contacts', CareContactViewSet, basename='care-contact')
 router.register(r'document-shares', DocumentShareViewSet, basename='document-share')
 
 urlpatterns = [
