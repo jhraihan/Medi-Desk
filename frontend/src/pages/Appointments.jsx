@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { appointmentsApi, checkInAppointment, doctorsApi, patientsApi } from "../api.js";
 import { apiError } from "../errors.js";
+import { useAuth } from "../auth-context.js";
+import { canWrite, isStaff } from "../permissions.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -26,6 +28,10 @@ const STATUS_TONES = {
 
 
 export default function Appointments() {
+  const { user } = useAuth();
+  const mayEdit = canWrite(user?.role, "appointments");
+  const mayRunDesk = isStaff(user?.role);
+
   const [appointments, setAppointments] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -126,9 +132,11 @@ export default function Appointments() {
         title="Appointments"
         subtitle="Book, check in and track every visit."
         action={
-          <Button onClick={() => setFormIsOpen(true)}>
-            <Plus size={15} /> Book appointment
-          </Button>
+          mayEdit && (
+            <Button onClick={() => setFormIsOpen(true)}>
+              <Plus size={15} /> Book appointment
+            </Button>
+          )
         }
       />
 
@@ -266,7 +274,7 @@ export default function Appointments() {
               </td>
               <td className="px-4 py-3">
                 <div className="flex flex-wrap gap-3">
-                  {apt.status === "pending" && (
+                  {mayRunDesk && apt.status === "pending" && (
                     <button
                       onClick={() => updateStatus(apt.id, "approved")}
                       className="text-xs font-medium text-emerald-700 hover:underline"
@@ -274,7 +282,7 @@ export default function Appointments() {
                       Approve
                     </button>
                   )}
-                  {["pending", "approved"].includes(apt.status) && (
+                  {mayRunDesk && ["pending", "approved"].includes(apt.status) && (
                     <button
                       onClick={() => handleCheckIn(apt.id)}
                       className="text-xs font-medium text-brand-700 hover:underline"
@@ -282,7 +290,7 @@ export default function Appointments() {
                       Check in
                     </button>
                   )}
-                  {!["completed", "cancelled"].includes(apt.status) && (
+                  {mayEdit && !["completed", "cancelled"].includes(apt.status) && (
                     <button
                       onClick={() => updateStatus(apt.id, "cancelled")}
                       className="text-xs font-medium text-rose-600 hover:underline"

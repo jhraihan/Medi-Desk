@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { patientsApi } from "../api.js";
 import { apiError } from "../errors.js";
+import { useAuth } from "../auth-context.js";
+import { canWrite } from "../permissions.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -15,6 +17,9 @@ import {
 } from "../components/index.js";
 
 export default function Patients() {
+  const { user } = useAuth();
+  const mayEdit = canWrite(user?.role, "patients");
+
   const [patients, setPatients] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -159,9 +164,11 @@ export default function Patients() {
           <h2 className="font-semibold text-ink-900">
             {isLoading ? "Loading..." : `${patients.length} Patients`}
           </h2>
-          <Button onClick={() => setFormIsOpen(true)}>
-            <Plus size={14} /> Add Patient
-          </Button>
+          {mayEdit && (
+            <Button onClick={() => setFormIsOpen(true)}>
+              <Plus size={14} /> Add Patient
+            </Button>
+          )}
         </div>
 
         <Table

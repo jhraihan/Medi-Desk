@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { billsApi, openInvoice, patientsApi, payBill } from "../api.js";
 import { apiError } from "../errors.js";
+import { useAuth } from "../auth-context.js";
+import { canWrite } from "../permissions.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -14,6 +16,9 @@ import {
 } from "../components/index.js";
 
 export default function Billing() {
+  const { user } = useAuth();
+  const mayEdit = canWrite(user?.role, "bills");
+
   const [bills, setBills] = useState([]);
   const [patients, setPatients] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -150,9 +155,11 @@ export default function Billing() {
           <h2 className="font-semibold text-ink-900">
             {isLoading ? "Loading..." : `${bills.length} Invoices`}
           </h2>
-          <Button onClick={() => setFormIsOpen(true)}>
-            <Plus size={14} /> Generate Bill
-          </Button>
+          {mayEdit && (
+            <Button onClick={() => setFormIsOpen(true)}>
+              <Plus size={14} /> Generate Bill
+            </Button>
+          )}
         </div>
 
         <Table
@@ -198,7 +205,7 @@ export default function Billing() {
               </td>
               <td className="px-4 py-3">
                 <div className="flex gap-3">
-                  {!bill.paid && (
+                  {mayEdit && !bill.paid && (
                     <button
                       onClick={() => settle(bill)}
                       className="text-xs font-medium text-brand-700 hover:underline"

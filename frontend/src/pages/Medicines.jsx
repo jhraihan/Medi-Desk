@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Plus, Search, X } from "lucide-react";
 import { medicinesApi } from "../api.js";
 import { apiError } from "../errors.js";
+import { useAuth } from "../auth-context.js";
+import { canWrite } from "../permissions.js";
 import { useFlash } from "../flash.js";
 import {
   Alert,
@@ -14,6 +16,9 @@ import {
 } from "../components/index.js";
 
 export default function Medicines() {
+  const { user } = useAuth();
+  const mayEdit = canWrite(user?.role, "medicines");
+
   const [medicines, setMedicines] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -144,9 +149,11 @@ export default function Medicines() {
               ? "Loading..."
               : `${filteredMedicines.length} Medicines listed`}
           </h2>
-          <Button onClick={() => setFormIsOpen(true)}>
-            <Plus size={14} /> Add Medicine
-          </Button>
+          {mayEdit && (
+            <Button onClick={() => setFormIsOpen(true)}>
+              <Plus size={14} /> Add Medicine
+            </Button>
+          )}
         </div>
 
         <Table columns={["ID", "Name", "Unit", "Description"]}>

@@ -1,10 +1,15 @@
 import { useEffect, useState } from "react";
 import { doctorsApi } from "../api.js";
 import { apiError } from "../errors.js";
+import { useAuth } from "../auth-context.js";
+import { canWrite } from "../permissions.js";
 import { useFlash } from "../flash.js";
 import { Alert, PageHeader, Table } from "../components/index.js";
 
 export default function Doctors() {
+  const { user } = useAuth();
+  const mayEdit = canWrite(user?.role, "doctors");
+
   const [doctors, setDoctors] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -92,12 +97,16 @@ export default function Doctors() {
                 </span>
               </td>
               <td className="px-4 py-3">
-                <button
-                  onClick={() => toggleAvailability(doc.id, doc.is_available)}
-                  className="text-xs font-medium text-brand-700 hover:underline"
-                >
-                  Toggle
-                </button>
+                {mayEdit ? (
+                  <button
+                    onClick={() => toggleAvailability(doc.id, doc.is_available)}
+                    className="text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    Toggle
+                  </button>
+                ) : (
+                  <span className="text-xs text-ink-400">—</span>
+                )}
               </td>
             </tr>
           ))}

@@ -40,7 +40,9 @@ function App() {
 
           <Route element={<ProtectedRoute />}>
             <Route element={<Layout />}>
-              <Route path="/appointments" element={<Appointments />} />
+              <Route element={<RoleRoute allow={["admin", "receptionist", "doctor", "patient"]} />}>
+                <Route path="/appointments" element={<Appointments />} />
+              </Route>
               <Route element={<RoleRoute allow={["admin", "doctor", "patient", "pharmacist"]} />}>
                 <Route path="/prescriptions" element={<Prescriptions />} />
               </Route>
