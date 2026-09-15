@@ -11,13 +11,14 @@ env/
 
 # Django
 *.log
-db.sqlite3
-db.sqlite3-journal
 media/
 staticfiles/
 
-# Environment variables
+# Environment variables - never commit real secrets.
+# Only the .env.example templates belong in git.
 .env
+.env.*
+!.env.example
 
 # VS Code
 .vscode/
@@ -38,5 +39,27 @@ frontend/dist/
 # OS
 .DS_Store
 Thumbs.db
-# generated OpenAPI schema
+
+# Generated OpenAPI schema
 schema.yml
+
+# Secrets and keys
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Local databases and backups
+*.sqlite3
+*.sqlite3-journal
+*.db
+*.sql
+*.dump
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
