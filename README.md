@@ -10,7 +10,12 @@ a visit and watch their place in the queue; a receptionist runs the front desk; 
 consults and prescribes; a pharmacist dispenses and tracks stock; an admin sees everything.
 Access is enforced on the server, not just hidden in the interface.
 
-![Sign in](docs/images/login.png)
+
+<img width="1875" height="847" alt="Screenshot 2026-09-14 175313" src="https://github.com/user-attachments/assets/74b23d8e-be5b-4d99-8bb9-1d14f360cb25" />
+<img width="1886" height="856" alt="Screenshot 2026-09-14 175326" src="https://github.com/user-attachments/assets/73867c53-42e1-47b5-b889-23fed23a99dc" />
+<img width="1885" height="851" alt="Screenshot 2026-09-14 175338" src="https://github.com/user-attachments/assets/c9fd62ae-8d9f-438f-86d2-72376003a27e" />
+<img width="1902" height="850" alt="Screenshot 2026-09-14 175353" src="https://github.com/user-attachments/assets/dd80d352-bc53-4781-a1be-afc4c42ba4ed" />
+
 
 ## Contents
 
@@ -62,15 +67,7 @@ schema, SQLite by default.
 **Frontend** — React 19, Vite 8, Tailwind CSS 4, React Router 7, Axios with an interceptor
 that refreshes expired tokens, lucide-react for icons.
 
-## Screenshots
 
-| Admin dashboard | Appointments |
-|---|---|
-| ![Admin dashboard](docs/images/admin-dashboard.png) | ![Appointments](docs/images/appointments.png) |
-
-| Patient dashboard |
-|---|
-| ![Patient dashboard](docs/images/patient-dashboard.png) |
 
 ## Running it locally
 
