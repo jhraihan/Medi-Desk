@@ -21,7 +21,6 @@ Access is enforced on the server, not just hidden in the interface.
 
 - [Features](#features)
 - [Tech stack](#tech-stack)
-- [Screenshots](#screenshots)
 - [Running it locally](#running-it-locally)
 - [Demo accounts](#demo-accounts)
 - [Project layout](#project-layout)
