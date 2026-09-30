@@ -1,0 +1,155 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MediDesk — Deploy to Render</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm; }
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Segoe UI", -apple-system, Arial, sans-serif;
+    font-size: 10.4pt; line-height: 1.5; color: #22272f; margin: 0;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  h1 { font-size: 20pt; color: #10243f; margin: 0 0 3px; letter-spacing: -.5px; }
+  .sub { color: #5d6b7f; font-size: 10pt; margin-bottom: 4mm;
+         padding-bottom: 3mm; border-bottom: 2.5px solid #0d7a72; }
+  h2 { font-size: 12.4pt; color: #10243f; margin: 20px 0 8px; page-break-after: avoid; }
+  h2 .n { display: inline-block; background: #0d7a72; color: #fff; width: 21px; height: 21px;
+          border-radius: 50%; text-align: center; line-height: 21px; font-size: 9.4pt;
+          margin-right: 8px; }
+  p { margin: 0 0 7px; }
+  ol, ul { margin: 0 0 8px; padding-left: 19px; }
+  li { margin-bottom: 4px; }
+
+  code { font-family: "Courier New", monospace; font-size: 9.2pt; background: #eef3f8;
+         padding: 1px 4px; border-radius: 3px; color: #0a4f6b; word-break: break-all; }
+  pre.code { font-family: "Courier New", monospace; font-size: 8.9pt; line-height: 1.45;
+             background: #12263c; color: #e7eef7; border-radius: 5px; padding: 10px 12px;
+             margin: 7px 0 10px; white-space: pre-wrap; page-break-inside: avoid; }
+  pre.code b { color: #7fd1c4; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-size: 9.4pt; }
+  th { background: #10243f; color: #fff; text-align: left; padding: 7px 9px; font-size: 9pt; }
+  td { padding: 7px 9px; border-bottom: 1px solid #dfe6ef; vertical-align: top; }
+  tr { page-break-inside: avoid; }
+  tbody tr:nth-child(even) { background: #f7f9fc; }
+  td code { font-size: 8.7pt; }
+
+  .warn { border-left: 4px solid #b3123c; background: #fdf4f6; padding: 8px 13px;
+          margin: 8px 0 12px; font-size: 9.6pt; page-break-inside: avoid; }
+  .warn > :last-child { margin-bottom: 0; }
+  .ui { font-weight: 600; color: #10243f; }
+  .head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+  .mark { width: 30px; height: 30px; flex: 0 0 30px;
+    background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect x="1.5" y="1.5" width="37" height="37" rx="9" fill="none" stroke="%230d7a72" stroke-width="2.4"/><path d="M6 20h5.4l2.3-5.6 3.4 10.2 3.1-8 2.4 5.1 2.2-2.6H34" fill="none" stroke="%230d7a72" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+    background-repeat: no-repeat; background-size: 30px 30px; }
+  .brand { font-size: 10.6pt; font-weight: 700; color: #0d7a72; letter-spacing: 2px;
+           text-transform: uppercase; }
+</style>
+</head>
+<body>
+
+<div class="head"><span class="mark"></span><span class="brand">MediDesk</span></div>
+
+<h1>Deploy to Render</h1>
+<div class="sub">
+  <code>github.com/jhraihan/Medi-Desk</code> · branch <code>main</code> · free tier · ~20 min
+</div>
+
+<h2><span class="n">1</span>Push the files</h2>
+<pre class="code">git add render.yaml build.sh requirements.txt hms/ README.md docs/
+git commit -m "Add Render deployment configuration"
+git push origin main</pre>
+
+<h2><span class="n">2</span>Create the blueprint</h2>
+<ol>
+  <li>Sign in at <code>render.com</code> with <span class="ui">GitHub</span>.</li>
+  <li>Grant access to the <span class="ui">Medi-Desk</span> repository.</li>
+  <li><span class="ui">New +</span> → <span class="ui">Blueprint</span>
+      (not "Web Service").</li>
+  <li>Select <span class="ui">Medi-Desk</span> → <span class="ui">Connect</span>.</li>
+  <li>Confirm it lists <code>medidesk-api</code>, <code>medidesk-web</code> and
+      <code>medidesk-db</code>, then click <span class="ui">Apply</span>.</li>
+</ol>
+<p>First build takes 5–10 minutes. Wait for both services to show
+   <span class="ui">Live</span>.</p>
+
+<h2><span class="n">3</span>Set the three URL variables</h2>
+<p>Read each service's real URL from the top of its dashboard page, then set these under
+   <span class="ui">Environment</span> → <span class="ui">Save Changes</span>:</p>
+
+<table>
+  <thead><tr><th style="width:25%">Service</th><th style="width:30%">Variable</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>medidesk-api</code></td><td><code>CORS_ALLOWED_ORIGINS</code></td>
+        <td><code>https://medidesk-web.onrender.com</code></td></tr>
+    <tr><td><code>medidesk-api</code></td><td><code>CSRF_TRUSTED_ORIGINS</code></td>
+        <td>same as above</td></tr>
+    <tr><td><code>medidesk-web</code></td><td><code>VITE_API_URL</code></td>
+        <td><code>https://medidesk-api.onrender.com/api/v1/</code></td></tr>
+  </tbody>
+</table>
+
+<div class="warn">
+  <p>
+    <code>VITE_API_URL</code> needs the trailing slash and the <code>/api/v1/</code> path, or
+    every request 404s. <code>CORS_ALLOWED_ORIGINS</code> needs <code>https://</code> and no
+    trailing slash. Substitute your own hostnames if Render added a suffix.
+  </p>
+</div>
+
+<p>After changing <code>VITE_API_URL</code>: <code>medidesk-web</code> →
+   <span class="ui">Manual Deploy</span> →
+   <span class="ui">Clear build cache &amp; deploy</span>.</p>
+
+<h2><span class="n">4</span>Create the admin user</h2>
+<p><code>medidesk-api</code> → <span class="ui">Shell</span>:</p>
+<pre class="code">cd hms
+python manage.py createsuperuser</pre>
+
+<h2><span class="n">5</span>Load demo data <span style="font-weight:400;font-size:9.6pt;color:#5d6b7f">(optional)</span></h2>
+<pre class="code">cd hms
+python manage.py seed_demo</pre>
+<p>All five accounts use password <code>Demo!2345</code>:
+   <code>hospital_admin</code>, <code>aisha</code>, <code>reception</code>,
+   <code>pharmacy</code>, <code>rafi</code>.</p>
+
+<h2><span class="n">6</span>Verify</h2>
+<table>
+  <thead><tr><th style="width:44%">Open</th><th>Expect</th></tr></thead>
+  <tbody>
+    <tr><td><code>&lt;api&gt;/healthz/</code></td><td><code>{"status": "ok"}</code></td></tr>
+    <tr><td><code>&lt;api&gt;/admin/</code></td><td>Django login, styled</td></tr>
+    <tr><td><code>&lt;web&gt;</code> → log in</td><td>Dashboard loads</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">7</span>Known limits</h2>
+<ul>
+  <li>API sleeps after 15 min idle — next request takes ~50 s.</li>
+  <li>Free Postgres is deleted after 90 days. Back up with
+      <code>pg_dump "$DATABASE_URL" &gt; backup.sql</code>.</li>
+  <li>Uploaded documents are lost on every redeploy.</li>
+</ul>
+
+<h2><span class="n">8</span>If it fails</h2>
+<table>
+  <thead><tr><th style="width:42%">Symptom</th><th>Fix</th></tr></thead>
+  <tbody>
+    <tr><td><code>./build.sh: Permission denied</code></td>
+        <td><code>git update-index --chmod=+x build.sh</code>, push</td></tr>
+    <tr><td>CORS error in console</td><td>Step 3 — check scheme and exact match</td></tr>
+    <tr><td>All API calls 404</td><td>Step 3 — missing trailing slash</td></tr>
+    <tr><td>Admin unstyled</td><td><code>collectstatic</code> failed; read build log</td></tr>
+    <tr><td>Deep-link refresh 404s</td><td>Check <span class="ui">Redirects/Rewrites</span> on the static site</td></tr>
+  </tbody>
+</table>
+
+<p style="margin-top:18px;padding-top:8px;border-top:1px solid #dfe6ef;font-size:8.6pt;color:#8a97a8">
+  Redeploy = <code>git push origin main</code>. Migrations run automatically.
+</p>
+
+</body>
+</html>

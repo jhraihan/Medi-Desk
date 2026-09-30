@@ -1,0 +1,93 @@
+# Render blueprint for MediDesk.
+#
+# Deploy: Render dashboard -> New -> Blueprint -> connect github.com/jhraihan/Medi-Desk.
+# Creates three resources: the Django API, the React static site, and a Postgres database.
+# See docs/DEPLOYMENT.md for the post-deploy steps (superuser, demo seed).
+
+databases:
+  - name: medidesk-db
+    databaseName: medidesk
+    user: medidesk
+    plan: free
+
+services:
+  # ---------------------------------------------------------------- Django API
+  - type: web
+    name: medidesk-api
+    runtime: python
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: ./build.sh
+    # rootDir stays at the repo root so build.sh can see requirements.txt; the
+    # app itself lives one level down, hence the chdir before gunicorn.
+    startCommand: cd hms && gunicorn hms.wsgi:application --bind 0.0.0.0:$PORT --workers 2
+    healthCheckPath: /healthz/
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+      # Generated once by Render and then held steady. Rotating it would
+      # invalidate every issued JWT and active session.
+      - key: SECRET_KEY
+        generateValue: true
+
+      - key: DEBUG
+        value: "False"
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: medidesk-db
+          property: connectionString
+
+      # RENDER_EXTERNAL_HOSTNAME is injected automatically and settings.py appends
+      # it to ALLOWED_HOSTS, so this only needs to cover anything extra.
+      - key: ALLOWED_HOSTS
+        value: localhost,127.0.0.1
+
+      # django-cors-headers requires a full origin including the scheme, which
+      # Render's `hostport` property does not provide. Set both explicitly, and
+      # update them if you attach a custom domain to the static site.
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://medidesk-web.onrender.com
+      - key: CSRF_TRUSTED_ORIGINS
+        value: https://medidesk-web.onrender.com
+
+      - key: TIME_ZONE
+        value: Asia/Dhaka
+
+  # -------------------------------------------------------------- React SPA
+  - type: web
+    name: medidesk-web
+    runtime: static
+    plan: free
+    branch: main
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+
+      # Baked into the bundle at build time. The trailing slash and the /api/v1/
+      # prefix both matter: src/api.js calls relative paths like "login/", and
+      # axios discards the last segment of a baseURL that does not end in "/".
+      - key: VITE_API_URL
+        value: https://medidesk-api.onrender.com/api/v1/
+
+    # React Router owns the paths, so every unmatched request returns index.html.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin

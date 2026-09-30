@@ -22,6 +22,7 @@ env = environ.Env(
     DEBUG=(bool, False),
     ALLOWED_HOSTS=(list, []),
     CORS_ALLOWED_ORIGINS=(list, []),
+    CSRF_TRUSTED_ORIGINS=(list, []),
 )
 
 # Reads hms/.env if present. Never commit that file — see .env.example.
@@ -34,6 +35,12 @@ SECRET_KEY = env('SECRET_KEY')
 DEBUG = env('DEBUG')
 
 ALLOWED_HOSTS = env('ALLOWED_HOSTS')
+
+# Render injects the service's public hostname at runtime. Appending it here means
+# a new or renamed service keeps working without editing ALLOWED_HOSTS by hand.
+RENDER_EXTERNAL_HOSTNAME = env('RENDER_EXTERNAL_HOSTNAME', default='')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, RENDER_EXTERNAL_HOSTNAME]
 
 
 # Application definition
@@ -57,6 +64,8 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # serves collected static files (admin, Swagger UI) without a separate web server
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     # must stay above CommonMiddleware or CORS headers get dropped on redirects
     'corsheaders.middleware.CorsMiddleware',
@@ -132,6 +141,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
@@ -181,8 +200,19 @@ SIMPLE_JWT = {
     'BLACKLIST_AFTER_ROTATION': True,
 }
 
+# Needed for admin and session logins over HTTPS behind a proxy such as Render.
+CSRF_TRUSTED_ORIGINS = env('CSRF_TRUSTED_ORIGINS')
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS = [*CSRF_TRUSTED_ORIGINS, f'https://{RENDER_EXTERNAL_HOSTNAME}']
+
 if not DEBUG:
+    # Render terminates TLS at its proxy and forwards this header. Without it Django
+    # sees plain HTTP and SECURE_SSL_REDIRECT would redirect forever.
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
+    # The platform's internal health probe arrives over plain HTTP, and a 301 to
+    # HTTPS would read as a failed check.
+    SECURE_REDIRECT_EXEMPT = [r'^healthz/$']
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True

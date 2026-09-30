@@ -27,6 +27,7 @@ Access is enforced on the server, not just hidden in the interface.
 - [Project layout](#project-layout)
 - [Tests](#tests)
 - [API documentation](#api-documentation)
+- [Deployment](#deployment)
 - [Environment variables](#environment-variables)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -259,6 +260,19 @@ refresh token pair, then send `Authorization: Bearer <access token>` on subseque
 Staff accounts are created through the Django admin or `createsuperuser`, never through
 registration — the register endpoint ignores any role sent to it and forces `patient`.
 
+## Deployment
+
+Deploys to [Render](https://render.com) from the [`render.yaml`](render.yaml) blueprint:
+the Django API as a web service, the React build as a static site, and a managed
+Postgres database. In Render, pick **New → Blueprint** and connect this repo.
+
+Two caveats on the free tier: the API sleeps after 15 minutes idle, so the first
+request afterwards takes about 50 seconds, and uploaded documents do not survive a
+redeploy because `MEDIA_ROOT` sits on an ephemeral disk.
+
+Full walkthrough, including the superuser step and troubleshooting:
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
 ## Environment variables
 
 `hms/.env` — never committed; `hms/.env.example` is the template.
@@ -269,6 +283,8 @@ registration — the register endpoint ignores any role sent to it and forces `p
 | `DEBUG` | no | Defaults to `False`. Use `True` only locally. |
 | `ALLOWED_HOSTS` | yes | Comma-separated hostnames the backend will answer for. |
 | `CORS_ALLOWED_ORIGINS` | yes | Comma-separated frontend origins allowed to call the API. |
+| `CSRF_TRUSTED_ORIGINS` | no | Origins trusted for form and admin POSTs. Needed for the admin behind HTTPS. |
+| `DATABASE_URL` | no | Postgres connection string. Falls back to the local SQLite file. |
 | `TIME_ZONE` | no | Defaults to `Asia/Dhaka`. Affects appointment and dose times. |
 
 `frontend/.env` — optional.
