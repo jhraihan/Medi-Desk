@@ -23,6 +23,7 @@ Access is enforced on the server, not just hidden in the interface.
 - [Tech stack](#tech-stack)
 - [Running it locally](#running-it-locally)
 - [Demo accounts](#demo-accounts)
+- [Administration](#administration)
 - [Project layout](#project-layout)
 - [Tests](#tests)
 - [API documentation](#api-documentation)
@@ -55,8 +56,17 @@ are flagged, and a repeated streak of them notifies the patient's care contact.
 
 **Billing.** Itemised bills with partial payments and a running outstanding balance.
 
-**Auditing.** Security-relevant actions are written to an append-only log that raises on any
-attempt to edit or delete an existing entry.
+**Auditing.** Every change to patient, billing, pharmacy and staff records, and every time a
+single patient record, prescription or document is opened, is written to an append-only log.
+It records who, when, from where and which fields changed, never the values. Any attempt to
+edit or delete an entry raises an error.
+
+**Administration.** An Admin section in the app manages accounts and roles, departments,
+doctor schedules, pharmacy stock and the audit log. The Django admin covers every model,
+with bulk actions and CSV export.
+
+**Sign-in protection.** An account locks after repeated wrong passwords, in the app and the
+Django admin alike, and sign-in attempts are rate limited per address.
 
 ## Tech stack
 
@@ -171,12 +181,13 @@ npm run dev
 Open `http://localhost:5173` and sign in with one of the demo accounts below.
 
 The frontend defaults to `http://127.0.0.1:8000/api/v1/`. To point it elsewhere, copy
-`frontend/.env.example` to `frontend/.env` and set `VITE_API_URL`.
+`frontend/.env.example` to `frontend/.env` and set `VITE_API_URL`. Set `VITE_DEMO_MODE=true`
+in the same file to show a one-click login button for each demo account.
 
 ## Demo accounts
 
-Every demo account uses the password **`Demo!2345`**. The login page has a button for each
-one, so you do not have to type them.
+Every demo account uses the password **`Demo!2345`**. With `VITE_DEMO_MODE=true` the login
+page has a button for each one, so you do not have to type them.
 
 | Role | Username | What they can do |
 |---|---|---|
@@ -188,11 +199,41 @@ one, so you do not have to type them.
 
 These accounts exist only in seeded demo data. Re-running `seed_demo` resets them.
 
-To create your own admin account instead:
+`seed_demo` runs only with `DEBUG=True`, or with `DEMO_MODE=True` for a public demo. Never
+run it where there is real patient data: the admin password above is public.
+
+## Administration
+
+Create the first admin account:
 
 ```bash
 python manage.py createsuperuser
 ```
+
+Sign in to the app with it and open **Admin** in the sidebar:
+
+| Page | What it does |
+|---|---|
+| Overview | Revenue, appointments, stock alerts, the blood network and recent activity |
+| Users & roles | Create staff accounts, change roles, reset passwords, unlock, deactivate |
+| Departments | Add, rename and remove departments |
+| Doctor schedules | The weekly sessions that bookable slots come from |
+| Pharmacy stock | Receive and correct batches; retire medicines from the catalogue |
+| Audit log | Filter every recorded change and record view |
+
+Pharmacists get the stock page too, at **Stock** in their sidebar.
+
+The Django admin at `/admin/` covers every model, including donors, reminders, shares and
+notifications, with search, filters, bulk actions and CSV export. Anyone with the admin role
+can sign in there; no other role can.
+
+Some things are deliberately not possible:
+
+- Accounts are deactivated, not deleted. Deleting one would cascade into the patient's
+  appointments, prescriptions and bills. Only a superuser can delete an account, in the
+  Django admin.
+- An admin who is not a superuser cannot edit a superuser or make anyone a superuser.
+- Nobody can edit or delete audit log or document access entries.
 
 ## Project layout
 
@@ -206,13 +247,19 @@ hospital-management-system-django-react/
 │   │   ├── serializers.py   validation and field exposure
 │   │   ├── permissions.py   role rules for reads and writes
 │   │   ├── services.py      queue, donor matching, dispensing, doses
-│   │   ├── tests.py         the test suite
+│   │   ├── admin.py         the Django admin, every model
+│   │   ├── admin_api.py     admin-only API behind the app's Admin section
+│   │   ├── audit.py         the audit trail, written from model signals
+│   │   ├── security.py      sign-in lockout
+│   │   ├── tests.py         the main test suite
+│   │   ├── test_security.py regression tests for the security fixes
+│   │   ├── test_admin.py    both admin panels
 │   │   └── management/commands/seed_demo.py
 │   ├── .env.example         template for hms/.env
 │   └── manage.py
 ├── frontend/                React application
 │   ├── src/
-│   │   ├── pages/           one file per screen
+│   │   ├── pages/           one file per screen; admin/ holds the Admin section
 │   │   ├── components/      shared UI, layout, the mascot
 │   │   ├── api.js           axios client and token refresh
 │   │   └── permissions.js   mirrors the server's write rules
@@ -245,6 +292,9 @@ With the backend running:
 - Swagger UI — `http://127.0.0.1:8000/api/docs/`
 - OpenAPI schema — `http://127.0.0.1:8000/api/schema/`
 
+Both are for staff only: sign in to the Django admin first in the same browser. Set
+`API_DOCS_PUBLIC=True` to open them to everyone.
+
 Authenticate at `POST /api/v1/login/` with a username and password to get an access and
 refresh token pair, then send `Authorization: Bearer <access token>` on subsequent requests.
 
@@ -256,8 +306,12 @@ refresh token pair, then send `Authorization: Bearer <access token>` on subseque
 | `/api/v1/register/` | POST | Self-registration; always creates a patient account |
 | `/api/v1/auth/me/` | GET | The signed-in user and their role |
 
-Staff accounts are created through the Django admin or `createsuperuser`, never through
-registration — the register endpoint ignores any role sent to it and forces `patient`.
+Staff accounts are created in the app's Admin section, the Django admin or with
+`createsuperuser`, never through registration. The register endpoint ignores any role sent
+to it and forces `patient`.
+
+Signing in is limited to 10 attempts per hour per address, and 5 wrong passwords lock the
+account for 15 minutes.
 
 ## Deployment
 
@@ -285,12 +339,21 @@ Full walkthrough, including the superuser step and troubleshooting:
 | `CSRF_TRUSTED_ORIGINS` | no | Origins trusted for form and admin POSTs. Needed for the admin behind HTTPS. |
 | `DATABASE_URL` | no | Postgres connection string. Falls back to the local SQLite file. |
 | `TIME_ZONE` | no | Defaults to `Asia/Dhaka`. Affects appointment and dose times. |
+| `CACHE_URL` | no | Cache for lockouts and rate limits. Use `dbcache://hms_cache` with more than one worker. |
+| `LOGIN_LOCKOUT_ATTEMPTS` | no | Wrong passwords before an account locks. Defaults to `5`. |
+| `LOGIN_LOCKOUT_SECONDS` | no | Lockout length. Defaults to `900`. |
+| `NUM_PROXIES` | no | Proxy hops in front of the app, used to find the client address. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). |
+| `ADMIN_URL` | no | Path of the Django admin. Defaults to `admin/`. |
+| `API_DOCS_PUBLIC` | no | `True` opens Swagger UI and the schema to everyone. Defaults to `False`. |
+| `FRONTEND_URL` | no | Target of the Django admin's "View site" link. Defaults to the first CORS origin. |
+| `DEMO_MODE` | no | Lets `seed_demo` run with `DEBUG` off. Never set it where there is real data. |
 
 `frontend/.env` — optional.
 
 | Variable | Required | Purpose |
 |---|---|---|
 | `VITE_API_URL` | no | API base URL. Defaults to `http://127.0.0.1:8000/api/v1/`. |
+| `VITE_DEMO_MODE` | no | `true` shows the demo login buttons. Leave it unset for real deployments. |
 
 Keep real secrets out of git. `.gitignore` already excludes `.env`, databases and key files,
 but generate a fresh `SECRET_KEY` per environment and never reuse a development one in

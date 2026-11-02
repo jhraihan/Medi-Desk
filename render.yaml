@@ -56,6 +56,15 @@ services:
       - key: TIME_ZONE
         value: Asia/Dhaka
 
+      # Shares lockout counters and throttle buckets across gunicorn workers.
+      # build.sh creates the table.
+      - key: CACHE_URL
+        value: dbcache://hms_cache
+
+      # Target of the Django admin's "View site" link.
+      - key: FRONTEND_URL
+        value: https://medidesk-web.onrender.com
+
   # -------------------------------------------------------------- React SPA
   - type: web
     name: medidesk-web
@@ -91,3 +100,11 @@ services:
       - path: /*
         name: Referrer-Policy
         value: strict-origin-when-cross-origin
+      # Tokens live in localStorage, so the main defence against their theft is not
+      # letting injected script run. connect-src must name the API origin.
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://medidesk-api.onrender.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()

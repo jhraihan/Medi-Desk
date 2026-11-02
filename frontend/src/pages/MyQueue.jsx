@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
-import { Clock, Users } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Link } from "react-router-dom";
+import { Clock, RefreshCw, Users } from "lucide-react";
 import { fetchMyQueue } from "../api.js";
-import { Alert, Badge, Card, EmptyState, PageHeader } from "../components/index.js";
+import { formatDateTime, formatTime } from "../format.js";
+import { usePolling } from "../hooks.js";
+import { Alert, Badge, Card, EmptyState, Loading, PageHeader } from "../components/index.js";
 
 const DOCTOR_STATUS = {
   in_clinic: { label: "In clinic", tone: "success" },
@@ -22,23 +25,23 @@ function waitLabel(minutes) {
 export default function MyQueue() {
   const [queue, setQueue] = useState(null);
   const [error, setError] = useState("");
+  const [updatedAt, setUpdatedAt] = useState(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-
-    function load() {
-      fetchMyQueue()
-        .then((data) => active && setQueue(data))
-        .catch(() => active && setError("Could not load your queue position."));
+  const load = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      setQueue(await fetchMyQueue());
+      setError("");
+      setUpdatedAt(new Date());
+    } catch {
+      setError("Could not load your queue position.");
+    } finally {
+      setIsRefreshing(false);
     }
-
-    load();
-    const timer = setInterval(load, 30000);
-    return () => {
-      active = false;
-      clearInterval(timer);
-    };
   }, []);
+
+  usePolling(load, 30000, { immediate: true });
 
   const appointment = queue?.appointment;
   const status = DOCTOR_STATUS[queue?.doctor_status] ?? { label: "Unknown", tone: "neutral" };
@@ -48,16 +51,40 @@ export default function MyQueue() {
       <PageHeader
         eyebrow="Live queue"
         title="Your place in line"
-        subtitle="This updates on its own every 30 seconds."
+        subtitle={
+          <span className="inline-flex items-center gap-2">
+            {updatedAt ? `Checked at ${formatTime(updatedAt)} · updates on its own` : "Checking…"}
+            <button
+              type="button"
+              onClick={load}
+              disabled={isRefreshing}
+              aria-label="Check again now"
+              title="Check again now"
+              className="rounded-lg p-1 text-brand-700 hover:bg-brand-50 disabled:opacity-60"
+            >
+              <RefreshCw size={13} className={isRefreshing ? "animate-spin" : ""} />
+            </button>
+          </span>
+        }
       />
 
-      <Alert>{error}</Alert>
+      <Alert onRetry={load}>{error}</Alert>
+
+      {!queue && !error && <Loading message="Finding your place in line…" />}
 
       {queue && !appointment && (
         <EmptyState
           mood="calm"
           title="Nothing booked for today"
           message="When you have an appointment today, your position will appear here."
+          action={
+            <Link
+              to="/appointments?book=1"
+              className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+            >
+              Book a visit
+            </Link>
+          }
         />
       )}
 
@@ -123,7 +150,7 @@ export default function MyQueue() {
                 <span className="text-xs font-semibold uppercase tracking-wider">Your appointment</span>
               </div>
               <p className="font-medium text-ink-900">
-                {new Date(appointment.appointment_date).toLocaleString()}
+                {formatDateTime(appointment.appointment_date)}
               </p>
               {appointment.reason && (
                 <p className="mt-1 text-sm text-ink-500">{appointment.reason}</p>

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Activity, CalendarDays, HeartPulse, ShieldCheck } from "lucide-react";
 import { fetchMe, login } from "../api.js";
 import { useAuth } from "../auth-context.js";
@@ -15,6 +15,10 @@ const DEMO_ACCOUNTS = [
 
 const DEMO_PASSWORD = "Demo!2345";
 
+// The demo buttons publish an admin password, so they only ship in a build made
+// for a demo deployment. Set VITE_DEMO_MODE=true there, and nowhere with real data.
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === "true";
+
 const HIGHLIGHTS = [
   { icon: CalendarDays, title: "Live queue", text: "See your position and waiting time in real time." },
   { icon: HeartPulse, title: "Your records", text: "Prescriptions and reports, kept in one place." },
@@ -22,12 +26,17 @@ const HIGHLIGHTS = [
 ];
 
 export default function Login() {
-  const [username, setUsername] = useState("");
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user, setUser } = useAuth();
+  // Register hands over the new username; a protected page sends where to return to.
+  const justRegistered = location.state?.registered;
+  const returnTo = location.state?.from?.pathname ?? "/dashboard";
+
+  const [username, setUsername] = useState(location.state?.username ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  const navigate = useNavigate();
-  const { setUser } = useAuth();
 
   async function signIn(name, secret) {
     setError("");
@@ -38,7 +47,7 @@ export default function Login() {
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
       setUser(await fetchMe());
-      navigate("/dashboard", { replace: true });
+      navigate(returnTo, { replace: true });
     } catch (problem) {
       setError(problem.response?.data?.detail || "Invalid username or password.");
     } finally {
@@ -48,8 +57,10 @@ export default function Login() {
 
   function handleSubmit(event) {
     event.preventDefault();
-    signIn(username, password);
+    signIn(username.trim(), password);
   }
+
+  if (user) return <Navigate to={returnTo} replace />;
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -96,6 +107,9 @@ export default function Login() {
             Use the account your hospital gave you.
           </p>
 
+          {justRegistered && !error && (
+            <Alert variant="success">Your account is ready. Sign in with your new password.</Alert>
+          )}
           <Alert>{error}</Alert>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -103,6 +117,9 @@ export default function Login() {
               label="Username"
               placeholder="your username"
               required
+              autoComplete="username"
+              autoCapitalize="none"
+              autoFocus={!username}
               value={username}
               onChange={(event) => setUsername(event.target.value)}
             />
@@ -110,36 +127,40 @@ export default function Login() {
               label="Password"
               type="password"
               required
+              autoComplete="current-password"
+              autoFocus={Boolean(username)}
               value={password}
               onChange={(event) => setPassword(event.target.value)}
             />
-            <Button type="submit" disabled={isLoggingIn} className="w-full">
+            <Button type="submit" busy={isLoggingIn} className="w-full">
               {isLoggingIn ? "Signing in…" : "Log in"}
             </Button>
           </form>
 
-          <div className="mt-7 border-t border-brand-100 pt-5">
-            <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-500">
-              Try a demo account
-            </p>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {DEMO_ACCOUNTS.map((account) => (
-                <button
-                  key={account.username}
-                  type="button"
-                  disabled={isLoggingIn}
-                  onClick={() => signIn(account.username, DEMO_PASSWORD)}
-                  className="rounded-xl border border-brand-200/70 bg-white/70 px-3 py-2 text-left transition-all duration-200 hover:border-brand-400 hover:bg-white disabled:opacity-60"
-                >
-                  <span className="block text-sm font-medium text-ink-900">{account.label}</span>
-                  <span className="block text-xs text-ink-500">{account.hint}</span>
-                </button>
-              ))}
+          {DEMO_MODE && (
+            <div className="mt-7 border-t border-brand-100 pt-5">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-ink-500">
+                Try a demo account
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {DEMO_ACCOUNTS.map((account) => (
+                  <button
+                    key={account.username}
+                    type="button"
+                    disabled={isLoggingIn}
+                    onClick={() => signIn(account.username, DEMO_PASSWORD)}
+                    className="rounded-xl border border-brand-200/70 bg-white/70 px-3 py-2 text-left transition-all duration-200 hover:border-brand-400 hover:bg-white disabled:opacity-60"
+                  >
+                    <span className="block text-sm font-medium text-ink-900">{account.label}</span>
+                    <span className="block text-xs text-ink-500">{account.hint}</span>
+                  </button>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-ink-400">
+                All demo accounts use the password {DEMO_PASSWORD}
+              </p>
             </div>
-            <p className="mt-3 text-xs text-ink-400">
-              All demo accounts use the password {DEMO_PASSWORD}
-            </p>
-          </div>
+          )}
 
           <p className="mt-6 text-center text-sm text-ink-500">
             New patient?{" "}

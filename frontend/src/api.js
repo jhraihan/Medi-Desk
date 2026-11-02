@@ -114,6 +114,17 @@ function createCrudApi(resourcePath) {
       const response = await API.get(`${resourcePath}/`, { params });
       return response.data;
     },
+
+    // Every page, for pickers that must offer the whole set rather than the first 25.
+    listAll: async (params) => {
+      const rows = [];
+      for (let page = 1; ; page += 1) {
+        const response = await API.get(`${resourcePath}/`, { params: { ...params, page } });
+        if (!response.data?.results) return response.data;
+        rows.push(...response.data.results);
+        if (!response.data.next) return rows;
+      }
+    },
     get: async (id) => {
       const response = await API.get(`${resourcePath}/${id}/`);
       return response.data;
@@ -156,10 +167,31 @@ export async function payBill(id, payment) {
 
 // The invoice endpoint needs the auth header, so a plain link in a new tab gets
 // a 401. Fetch it through the client and hand the browser a blob instead.
+// A tab opened after an await no longer counts as the user's click and is blocked
+// as a popup, so the tab opens first, during the click, and is pointed at the
+// invoice once it arrives. Call this straight from the click handler.
 export async function openInvoice(id) {
-  const response = await API.get(`bills/${id}/invoice/`, { responseType: "blob" });
+  const tab = window.open("", "_blank");
+  if (tab) tab.opener = null;
+
+  let response;
+  try {
+    response = await API.get(`bills/${id}/invoice/`, { responseType: "blob" });
+  } catch (problem) {
+    tab?.close();
+    throw problem;
+  }
+
   const url = URL.createObjectURL(response.data);
-  window.open(url, "_blank", "noopener");
+  if (tab) {
+    tab.location.href = url;
+  } else {
+    // Popups blocked outright: save the invoice instead of losing it.
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `invoice-${id}.html`;
+    link.click();
+  }
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
@@ -218,7 +250,10 @@ export async function downloadDocument(id, title) {
   const url = URL.createObjectURL(response.data);
   const link = document.createElement("a");
   link.href = url;
-  link.download = title;
+  // The title has no extension; take it from the stored file so the download opens.
+  const stored = response.headers["content-disposition"]?.match(/filename="?([^";]+)"?/)?.[1];
+  const extension = stored?.includes(".") ? stored.slice(stored.lastIndexOf(".")) : "";
+  link.download = extension && !title.toLowerCase().endsWith(extension.toLowerCase()) ? `${title}${extension}` : title;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
@@ -292,3 +327,29 @@ export const appointmentsApi = createCrudApi("appointments");
 export const prescriptionsApi = createCrudApi("prescriptions");
 export const medicinesApi = createCrudApi("medicines");
 export const billsApi = createCrudApi("bills");
+export const medicineStockApi = createCrudApi("medicine-stock");
+export const doctorSchedulesApi = createCrudApi("doctor-schedules");
+
+// Admin section. Every endpoint below answers 403 for any role but admin.
+export const adminUsersApi = createCrudApi("admin/users");
+export const auditLogsApi = createCrudApi("admin/audit-logs");
+
+export async function fetchAdminOverview() {
+  const response = await API.get("admin/overview/");
+  return response.data;
+}
+
+export async function setUserPassword(id, password) {
+  const response = await API.post(`admin/users/${id}/set-password/`, { password });
+  return response.data;
+}
+
+export async function unlockUser(id) {
+  const response = await API.post(`admin/users/${id}/unlock/`);
+  return response.data;
+}
+
+export async function fetchAuditModels() {
+  const response = await API.get("admin/audit-logs/models/");
+  return response.data;
+}

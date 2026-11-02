@@ -31,6 +31,11 @@ differ:
   static site's full origin, scheme included (`https://…`).
 - On `medidesk-web`: `VITE_API_URL` → the API's URL with the path appended:
   `https://<api-host>/api/v1/`
+- On `medidesk-web`: the `Content-Security-Policy` header in `render.yaml` names
+  the API origin in `connect-src`. If the API host differs, change it there too,
+  or the browser blocks every API call.
+- On `medidesk-api`: `FRONTEND_URL` → the static site's origin. The Django admin's
+  "View site" link points there.
 
 The trailing slash on `VITE_API_URL` is required. `frontend/src/api.js` issues
 relative paths such as `login/`, and axios discards the final segment of a
@@ -48,17 +53,39 @@ The build runs `migrate` but cannot create an interactive user. Open
 cd hms && python manage.py createsuperuser
 ```
 
-The admin is then at `https://<api-host>/admin/`.
+The Django admin is then at `https://<api-host>/admin/` (or at `ADMIN_URL`, below).
+Sign in to the React app with the same account and the **Admin** section appears in
+the sidebar. Create every other staff account from there.
 
 ### Optional: demo data
+
+`seed_demo` refuses to run while `DEBUG` is off unless `DEMO_MODE=True` is set on
+`medidesk-api`. Then:
 
 ```bash
 cd hms && python manage.py seed_demo
 ```
 
-This creates the demo accounts described in the README. Skip it for a real
-deployment — it inserts fictional patients and a shared, publicly documented
-password.
+This creates the demo accounts described in the README. Set `VITE_DEMO_MODE=true` on
+`medidesk-web` and redeploy it to show the one-click demo logins.
+
+Skip all of this for a real deployment. Every seeded account, the admin included,
+shares one publicly documented password, and `seed_demo --flush` deletes every
+account that is not a superuser.
+
+## 4. Security settings
+
+All optional, all on `medidesk-api`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CACHE_URL` | `locmemcache://` | Where sign-in lockout counts and rate-limit buckets live. `render.yaml` sets `dbcache://hms_cache` so all gunicorn workers share one count. With the default, each worker counts separately. |
+| `LOGIN_LOCKOUT_ATTEMPTS` | `5` | Failed passwords before an account is locked. Applies to the API and the Django admin. |
+| `LOGIN_LOCKOUT_SECONDS` | `900` | How long the lock lasts after the last failure. An admin can clear it early from **Admin → Users & roles**. |
+| `NUM_PROXIES` | unset | Proxy hops in front of the app. Rate limits and the audit log count back this many entries in `X-Forwarded-For` to find the client. Unset, the whole header is used, so a client can add fake entries to avoid per-address limits. Confirm Render's hop count before you set it: a value too low makes every visitor share one rate-limit bucket. |
+| `ADMIN_URL` | `admin/` | Path of the Django admin. Moving it keeps it away from automated scanners. |
+| `API_DOCS_PUBLIC` | `False` | Swagger UI and the schema are open only to staff signed in to the Django admin. `True` opens them to everyone. |
+| `DEMO_MODE` | `False` | Lets `seed_demo` run with `DEBUG` off. |
 
 ## What the build does
 
@@ -68,6 +95,8 @@ password.
 2. `collectstatic` — writes `hms/staticfiles/`, which WhiteNoise serves for the
    admin and Swagger UI. There is no separate web server for static files.
 3. `migrate`
+4. `createcachetable` — the table behind `CACHE_URL=dbcache://hms_cache`. It does
+   nothing with other cache backends.
 
 Gunicorn then starts with 2 workers, bound to Render's `$PORT`.
 
@@ -120,3 +149,6 @@ still runs the full stack with Postgres and Redis.
 | Admin renders unstyled | `collectstatic` failed during the build; check the build log. |
 | Redirect loop | `SECURE_PROXY_SSL_HEADER` is required so Django sees Render's forwarded HTTPS. It is set in `settings.py`. |
 | First request hangs ~50s | Free-tier cold start, as above. |
+| Every API call fails; the console reports a Content-Security-Policy violation | `connect-src` in the static site's CSP header does not name the API origin. |
+| "Too many failed sign-in attempts" | The account is locked for `LOGIN_LOCKOUT_SECONDS`. Clear it from **Admin → Users & roles**, or with the Django admin action "Clear failed sign-in lockout". |
+| `/api/docs/` returns 403 | Sign in to the Django admin first, or set `API_DOCS_PUBLIC=True`. |

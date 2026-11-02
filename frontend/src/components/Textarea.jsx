@@ -1,10 +1,12 @@
-import { inputBox, labelText } from "./styles.js";
+import { FieldLabel } from "./Input.jsx";
+import { hintText, inputBox } from "./styles.js";
 
-export default function Textarea({ label, className = "", rows = 3, ...rest }) {
+export default function Textarea({ label, hint, className = "", rows = 3, ...rest }) {
   return (
     <label className="block">
-      {label && <span className={labelText}>{label}</span>}
+      <FieldLabel label={label} required={rest.required} />
       <textarea rows={rows} className={`${inputBox} ${className}`} {...rest} />
+      {hint && <span className={hintText}>{hint}</span>}
     </label>
   );
 }

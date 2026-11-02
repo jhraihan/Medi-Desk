@@ -42,6 +42,16 @@ RENDER_EXTERNAL_HOSTNAME = env('RENDER_EXTERNAL_HOSTNAME', default='')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS = [*ALLOWED_HOSTS, RENDER_EXTERNAL_HOSTNAME]
 
+# Allows seed_demo to run with DEBUG off. Its accounts share one published password,
+# so leave this off anywhere that holds real patient data.
+DEMO_MODE = env.bool('DEMO_MODE', default=False)
+
+# Moving the admin off the default path keeps it out of drive-by scanners. It is not a
+# substitute for the login lockout below.
+ADMIN_URL = env('ADMIN_URL', default='admin/')
+if not ADMIN_URL.endswith('/'):
+    ADMIN_URL += '/'
+
 
 # Application definition
 
@@ -72,6 +82,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # exposes the request to the audit signal handlers; see backend/audit.py
+    'backend.audit.AuditContextMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -124,6 +136,18 @@ AUTH_PASSWORD_VALIDATORS = [
 
 AUTH_USER_MODEL = 'backend.User'
 
+# Every password check, API and admin alike, goes through the lockout backend.
+AUTHENTICATION_BACKENDS = ['backend.security.LockoutModelBackend']
+LOGIN_LOCKOUT_ATTEMPTS = env.int('LOGIN_LOCKOUT_ATTEMPTS', default=5)
+LOGIN_LOCKOUT_SECONDS = env.int('LOGIN_LOCKOUT_SECONDS', default=15 * 60)
+
+# Lockout counters and throttle buckets live here. The local-memory default is per
+# process, so with several gunicorn workers each one keeps its own count. Production
+# sets CACHE_URL=dbcache://hms_cache, a table build.sh creates, so every worker shares it.
+CACHES = {
+    'default': env.cache_url('CACHE_URL', default='locmemcache://'),
+}
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
@@ -163,6 +187,11 @@ ALLOWED_UPLOAD_TYPES = {
 }
 
 CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
+# Lets the frontend read a download's file name, so a saved record keeps its extension.
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
+
+# Where the admin's "View site" link and the React app's links back point.
+FRONTEND_URL = env('FRONTEND_URL', default=CORS_ALLOWED_ORIGINS[0] if CORS_ALLOWED_ORIGINS else None)
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -183,6 +212,10 @@ REST_FRAMEWORK = {
         'login': '10/hour',
         'blood_request': '10/day',
     },
+    # How many proxies sit in front of the app. Throttles and the audit log take the
+    # client address from X-Forwarded-For counted back by this many hops. Unset, DRF
+    # uses the whole header, which a client can pad to dodge the per-address limits.
+    'NUM_PROXIES': env.int('NUM_PROXIES', default=None),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
@@ -191,6 +224,16 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Patients, appointments, prescriptions, pharmacy and billing.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    # The schema maps every endpoint and field. By default only staff signed in to the
+    # Django admin can open it; API_DOCS_PUBLIC=True opens it to everyone.
+    'SERVE_PERMISSIONS': (
+        ['rest_framework.permissions.AllowAny'] if env.bool('API_DOCS_PUBLIC', default=False)
+        else ['rest_framework.permissions.IsAdminUser']
+    ),
+    'SERVE_AUTHENTICATION': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
 }
 
 SIMPLE_JWT = {
@@ -209,7 +252,9 @@ if not DEBUG:
     # Render terminates TLS at its proxy and forwards this header. Without it Django
     # sees plain HTTP and SECURE_SSL_REDIRECT would redirect forever.
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_SSL_REDIRECT = True
+    # On by default. The test client speaks plain HTTP, so CI's test step turns it
+    # off; otherwise every request gets a 301 before it reaches a view.
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
     # The platform's internal health probe arrives over plain HTTP, and a 301 to
     # HTTPS would read as a failed check.
     SECURE_REDIRECT_EXEMPT = [r'^healthz/$']

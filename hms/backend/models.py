@@ -35,6 +35,12 @@ class User(AbstractUser):
         label = full_name or self.username
         return f'{label} ({self.get_role_display()})'
 
+    def save(self, *args, **kwargs):
+        # The Django admin belongs to hospital admins. Deriving is_staff from the role
+        # means promoting or demoting someone in either panel moves admin access with it.
+        self.is_staff = self.is_superuser or self.role == self.Role.ADMIN
+        super().save(*args, **kwargs)
+
 class Department(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField()

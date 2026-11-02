@@ -1,73 +1,91 @@
-import { useEffect, useState } from "react";
-import { Plus, Search, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Plus } from "lucide-react";
 import { medicinesApi } from "../api.js";
 import { apiError } from "../errors.js";
 import { useAuth } from "../auth-context.js";
 import { canWrite } from "../permissions.js";
-import { useFlash } from "../flash.js";
+import { money } from "../format.js";
+import { useDebounced, useLoader } from "../hooks.js";
+import { useToast } from "../toast-context.js";
 import {
   Alert,
+  Badge,
   Button,
-  IconButton,
+  Card,
+  Chips,
   Input,
+  Modal,
   PageHeader,
+  Pager,
+  SearchInput,
   Table,
   Textarea,
 } from "../components/index.js";
 
+const BLANK = {
+  name: "",
+  generic_name: "",
+  manufacturer: "",
+  unit: "",
+  unit_price: "",
+  description: "",
+  requires_prescription: true,
+};
+
+const STATUS_FILTERS = [
+  { value: "true", label: "In use" },
+  { value: "false", label: "Retired" },
+  { value: "", label: "All" },
+];
+
 export default function Medicines() {
   const { user } = useAuth();
+  const toast = useToast();
   const mayEdit = canWrite(user?.role, "medicines");
 
-  const [medicines, setMedicines] = useState([]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useFlash();
+  const [search, setSearch] = useState("");
+  const [active, setActive] = useState("true");
+  const [page, setPage] = useState(1);
 
-  const [formIsOpen, setFormIsOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [unit, setUnit] = useState("");
-  const [description, setDescription] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
+  const [form, setForm] = useState(BLANK);
+  const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
-  const [reloadCount, setReloadCount] = useState(0);
-  const reload = () => setReloadCount((c) => c + 1);
+  const settledSearch = useDebounced(search);
+  const load = useCallback(() => {
+    const query = { page };
+    if (settledSearch) query.search = settledSearch;
+    if (active) query.is_active = active;
+    return medicinesApi.listPage(query);
+  }, [page, settledSearch, active]);
+  const { data, error, isLoading, reload } = useLoader(load, "Could not load medicines.");
+  const rows = data?.results ?? [];
 
-  useEffect(() => {
-    async function load() {
-      try {
-        setIsLoading(true);
-        const data = await medicinesApi.list();
-        setMedicines(data);
-      } catch (err) {
-        setError(apiError(err, "Could not load medicines."));
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    load();
-  }, [reloadCount]);
+  function field(name) {
+    return {
+      value: form[name],
+      onChange: (event) => setForm((current) => ({ ...current, [name]: event.target.value })),
+    };
+  }
 
-  const filteredMedicines = medicines.filter(
-    (m) =>
-      m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      m.description.toLowerCase().includes(searchQuery.toLowerCase()),
-  );
+  function openForm() {
+    setForm(BLANK);
+    setFormError("");
+    setFormOpen(true);
+  }
 
-  async function handleSave(e) {
-    e.preventDefault();
+  async function handleSave(event) {
+    event.preventDefault();
+    setFormError("");
     setIsSaving(true);
     try {
-      await medicinesApi.create({ name, unit, description });
-      setNotice("Medicine registered.");
-      setFormIsOpen(false);
-      setName("");
-      setUnit("");
-      setDescription("");
+      await medicinesApi.create({ ...form, unit_price: form.unit_price || "0" });
+      toast.success(`${form.name} added to the catalogue.`);
+      setFormOpen(false);
       reload();
-    } catch (err) {
-      setError(apiError(err, "Could not add that medicine."));
+    } catch (problem) {
+      setFormError(apiError(problem, "Could not add that medicine."));
     } finally {
       setIsSaving(false);
     }
@@ -76,100 +94,115 @@ export default function Medicines() {
   return (
     <div>
       <PageHeader
-        title="Medicine Inventory"
-        subtitle="Catalog and pharmacy registry."
+        eyebrow="Pharmacy"
+        title="Medicines"
+        subtitle="The catalogue doctors prescribe from."
+        action={
+          mayEdit && (
+            <Button onClick={openForm}>
+              <Plus size={15} /> Add medicine
+            </Button>
+          )
+        }
       />
 
-      <Alert>{error}</Alert>
-      <Alert variant="success">{notice}</Alert>
-
-      <div className="relative mb-6 max-w-md">
-        <Search className="absolute top-2.5 left-3 text-slate-400" size={16} />
-        <input
-          type="text"
-          placeholder="Search medicines..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full rounded-md border border-slate-300 py-2 pr-3 pl-9 text-sm outline-none focus:border-indigo-500"
+      <Card className="animate-rise mb-4 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+        <SearchInput
+          placeholder="Search by brand, generic name or use"
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
+          className="sm:w-96"
         />
-      </div>
+        <Chips
+          label="Status"
+          options={STATUS_FILTERS}
+          value={active}
+          onChange={(value) => {
+            setActive(value);
+            setPage(1);
+          }}
+        />
+      </Card>
 
-      {formIsOpen && (
-        <form
-          onSubmit={handleSave}
-          className="animate-rise glass-strong mb-5 rounded-2xl p-5"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-ink-900">
-              Add Medicine
-            </h2>
-            <IconButton onClick={() => setFormIsOpen(false)}>
-              <X size={16} />
-            </IconButton>
-          </div>
+      <Alert onRetry={reload}>{error}</Alert>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Medicine Name"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <Input
-              label="Unit (e.g., mg, ml, tablet)"
-              required
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-            />
-          </div>
+      <p className="mb-3 text-sm text-ink-500" aria-live="polite">
+        {isLoading && !data ? "Loading…" : `${data?.count ?? 0} medicine${data?.count === 1 ? "" : "s"}`}
+      </p>
 
-          <Textarea
-            label="Description"
-            className="mt-4"
-            required
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
+      <Table
+        columns={["Medicine", "Unit", "Price", "Description", ""]}
+        isLoading={isLoading}
+        empty={search ? "No medicines match that search." : "The catalogue is empty."}
+      >
+        {rows.map((medicine) => (
+          <tr key={medicine.id} className="transition-colors duration-150 hover:bg-white/60">
+            <td className="px-4 py-3">
+              <p className="font-medium text-ink-900">{medicine.name}</p>
+              {(medicine.generic_name || medicine.manufacturer) && (
+                <p className="text-xs text-ink-500">
+                  {[medicine.generic_name, medicine.manufacturer].filter(Boolean).join(" · ")}
+                </p>
+              )}
+            </td>
+            <td className="px-4 py-3 text-ink-700">{medicine.unit}</td>
+            <td className="px-4 py-3 whitespace-nowrap text-ink-700">{money(medicine.unit_price)}</td>
+            <td className="max-w-md px-4 py-3 text-ink-700">
+              <p className="line-clamp-2">{medicine.description || "—"}</p>
+            </td>
+            <td className="px-4 py-3">
+              <div className="flex flex-wrap justify-end gap-1">
+                {medicine.requires_prescription && <Badge tone="brand">Rx</Badge>}
+                {!medicine.is_active && <Badge>retired</Badge>}
+              </div>
+            </td>
+          </tr>
+        ))}
+      </Table>
+      <Pager page={page} count={data?.count ?? 0} onChange={setPage} />
 
-          <div className="mt-4 flex gap-2">
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save"}
-            </Button>
-            <Button variant="secondary" onClick={() => setFormIsOpen(false)}>
+      <Modal
+        open={formOpen}
+        size="lg"
+        title="Add a medicine"
+        error={formError}
+        busy={isSaving}
+        onClose={() => setFormOpen(false)}
+        onSubmit={handleSave}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setFormOpen(false)} disabled={isSaving}>
               Cancel
             </Button>
-          </div>
-        </form>
-      )}
-
-      <div className="animate-fade">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold text-ink-900">
-            {isLoading
-              ? "Loading..."
-              : `${filteredMedicines.length} Medicines listed`}
-          </h2>
-          {mayEdit && (
-            <Button onClick={() => setFormIsOpen(true)}>
-              <Plus size={14} /> Add Medicine
+            <Button type="submit" busy={isSaving}>
+              {isSaving ? "Saving…" : "Add medicine"}
             </Button>
-          )}
+          </>
+        }
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input label="Brand name" required placeholder="Napa" {...field("name")} />
+          <Input label="Generic name" placeholder="Paracetamol" {...field("generic_name")} />
+          <Input label="Unit" required placeholder="500 mg tablet" {...field("unit")} />
+          <Input label="Price per unit (৳)" type="number" min="0" step="0.01" {...field("unit_price")} />
+          <Input label="Manufacturer" {...field("manufacturer")} />
+          <label className="flex items-center gap-2 self-end pb-2.5 text-sm text-ink-700">
+            <input
+              type="checkbox"
+              checked={form.requires_prescription}
+              onChange={(event) => setForm((current) => ({ ...current, requires_prescription: event.target.checked }))}
+              className="h-4 w-4 rounded accent-brand-600"
+            />
+            Needs a prescription
+          </label>
         </div>
-
-        <Table columns={["ID", "Name", "Unit", "Description"]}>
-          {filteredMedicines.map((m) => (
-            <tr
-              key={m.id}
-              className="transition-colors duration-150 hover:bg-white/60"
-            >
-              <td className="px-4 py-3 text-ink-700">{m.id}</td>
-              <td className="px-4 py-3 font-medium text-ink-900">{m.name}</td>
-              <td className="px-4 py-3 text-ink-700">{m.unit}</td>
-              <td className="px-4 py-3 text-ink-700">{m.description}</td>
-            </tr>
-          ))}
-        </Table>
-      </div>
+        <div className="mt-4">
+          <Textarea label="What it's for" rows={2} {...field("description")} />
+        </div>
+      </Modal>
     </div>
   );
 }

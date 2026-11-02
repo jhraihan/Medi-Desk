@@ -10,3 +10,7 @@ cd hms
 python manage.py collectstatic --no-input
 
 python manage.py migrate
+
+# Lockout counters and throttle buckets when CACHE_URL=dbcache://hms_cache. Does
+# nothing for other cache backends, and skips the table if it already exists.
+python manage.py createcachetable

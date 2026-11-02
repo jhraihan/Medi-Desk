@@ -2,7 +2,8 @@ import random
 from datetime import date, time, timedelta
 from decimal import Decimal
 
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
@@ -80,6 +81,14 @@ class Command(BaseCommand):
 
     @transaction.atomic
     def handle(self, *args, **options):
+        # Every seeded account, the admin included, shares one published password, and
+        # --flush deletes every account that is not a superuser. Neither belongs near
+        # real patient data, so production has to opt in with DEMO_MODE.
+        if not (settings.DEBUG or settings.DEMO_MODE):
+            raise CommandError(
+                'seed_demo creates accounts with a public password. Set DEMO_MODE=True '
+                'to run it with DEBUG off, and only on a deployment without real data.')
+
         random.seed(7)
 
         if options['flush']:

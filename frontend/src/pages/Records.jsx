@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { Download, Eye, FilePlus2, FileText, Share2, X } from "lucide-react";
+import { useCallback, useState } from "react";
+import { Download, Eye, FilePlus2, FileText, Share2, UploadCloud } from "lucide-react";
 import {
   doctorsApi,
   documentSharesApi,
@@ -11,16 +11,22 @@ import {
   uploadDocument,
 } from "../api.js";
 import { useAuth } from "../auth-context.js";
-import { useFlash } from "../flash.js";
+import { apiError } from "../errors.js";
+import { formatDate, formatDateTime, localISODate } from "../format.js";
+import { useLoader } from "../hooks.js";
+import { doctorLabel } from "../pickers.js";
+import { useToast } from "../toast-context.js";
 import {
   Alert,
   Badge,
   Button,
   Card,
+  Chips,
+  ConfirmDialog,
   EmptyState,
-  Loading,
-  IconButton,
   Input,
+  Loading,
+  Modal,
   PageHeader,
   Select,
   Textarea,
@@ -42,121 +48,86 @@ const KIND_TONES = {
   other: "neutral",
 };
 
+const SHARE_DAYS = [
+  { value: "1", label: "1 day" },
+  { value: "7", label: "1 week" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+];
+
+// Matches the API's upload limit (MAX_UPLOAD_BYTES in settings.py).
+const MAX_BYTES = 10 * 1024 * 1024;
+const ACCEPTED = [".pdf", ".jpg", ".jpeg", ".png"];
+
 function inDays(days) {
   const when = new Date();
   when.setDate(when.getDate() + days);
   return when.toISOString();
 }
 
+function sizeLabel(bytes) {
+  return bytes < 1024 * 1024 ? `${Math.ceil(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function Records() {
   const { user } = useAuth();
+  const toast = useToast();
   const isPatient = user?.role === "patient";
 
-  const [documents, setDocuments] = useState([]);
-  const [shares, setShares] = useState([]);
-  const [doctors, setDoctors] = useState([]);
-  const [accessLog, setAccessLog] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useFlash();
+  const [kind, setKind] = useState("");
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [sharing, setSharing] = useState(null);
+  const [accessLogFor, setAccessLogFor] = useState(null);
+  const [revoking, setRevoking] = useState(null);
+  const [isWorking, setIsWorking] = useState(false);
+  const [downloadingId, setDownloadingId] = useState(null);
 
-  const [formIsOpen, setFormIsOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [kind, setKind] = useState("lab_report");
-  const [documentDate, setDocumentDate] = useState("");
-  const [issuedBy, setIssuedBy] = useState("");
-  const [notes, setNotes] = useState("");
-  const [file, setFile] = useState(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const load = useCallback(() => {
-    const wanted = isPatient
-      ? [documentsApi.list(), documentSharesApi.list(), doctorsApi.list()]
-      : [fetchSharedWithMe(), Promise.resolve([]), Promise.resolve([])];
-
-    return Promise.all(wanted)
-      .then(([docs, shareRows, doctorRows]) => {
-        setDocuments(docs);
-        setShares(shareRows);
-        setDoctors(doctorRows);
-        setError("");
-      })
-      .catch(() => setError("Could not load your records."))
-      .finally(() => setIsLoading(false));
+  const load = useCallback(async () => {
+    if (!isPatient) return { documents: await fetchSharedWithMe(), shares: [], doctors: [] };
+    const [documents, shares, doctors] = await Promise.all([
+      documentsApi.listAll(),
+      documentSharesApi.listAll(),
+      doctorsApi.listAll(),
+    ]);
+    return { documents, shares, doctors };
   }, [isPatient]);
+  const { data, error, isLoading, reload } = useLoader(load, "Could not load your records.");
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const documents = data?.documents ?? [];
+  const shown = kind ? documents.filter((document) => document.kind === kind) : documents;
+  const activeShares = (data?.shares ?? []).filter((share) => share.is_active);
+  const kindOptions = [
+    { value: "", label: "All", count: documents.length },
+    ...KINDS.map((option) => ({
+      ...option,
+      count: documents.filter((document) => document.kind === option.value).length,
+    })).filter((option) => option.count > 0),
+  ];
 
-  async function handleUpload(event) {
-    event.preventDefault();
-    if (!file) {
-      setError("Choose a file to upload.");
-      return;
-    }
-
-    setIsSaving(true);
-    const form = new FormData();
-    form.append("title", title);
-    form.append("kind", kind);
-    form.append("document_date", documentDate);
-    form.append("issued_by", issuedBy);
-    form.append("notes", notes);
-    form.append("file", file);
-
+  async function download(document) {
+    setDownloadingId(document.id);
     try {
-      await uploadDocument(form);
-      setNotice("Record uploaded.");
-      setFormIsOpen(false);
-      setTitle("");
-      setDocumentDate("");
-      setIssuedBy("");
-      setNotes("");
-      setFile(null);
-      load();
+      await downloadDocument(document.id, document.title);
     } catch (problem) {
-      const detail = problem.response?.data;
-      setError(detail?.file?.[0] || detail?.document_date?.[0] || "Could not upload that file.");
+      toast.error(apiError(problem, "Could not download that record."));
     } finally {
-      setIsSaving(false);
+      setDownloadingId(null);
     }
   }
 
-  async function handleShare(documentId) {
-    if (!doctors.length) {
-      setError("No doctors available to share with.");
-      return;
-    }
-    const doctor = doctors[0];
+  async function confirmRevoke() {
+    setIsWorking(true);
     try {
-      await shareDocument(documentId, doctor.user, inDays(7));
-      setNotice(`Shared with ${doctor.user_details?.first_name ?? "the doctor"} for 7 days.`);
-      load();
+      await documentSharesApi.remove(revoking.id);
+      toast.success(`${revoking.shared_with_name || "The doctor"} can no longer see “${revoking.document_title}”.`);
+      setRevoking(null);
+      reload();
     } catch (problem) {
-      setError(problem.response?.data?.detail || "Could not share this record.");
+      toast.error(apiError(problem, "Could not revoke that share."));
+    } finally {
+      setIsWorking(false);
     }
   }
-
-  async function handleRevoke(shareId) {
-    try {
-      await documentSharesApi.remove(shareId);
-      setNotice("Access revoked.");
-      load();
-    } catch {
-      setError("Could not revoke that share.");
-    }
-  }
-
-  async function showAccessLog(documentId) {
-    try {
-      setAccessLog(await fetchDocumentAccessLog(documentId));
-    } catch {
-      setError("Could not load the access log.");
-    }
-  }
-
-  const activeShares = shares.filter((share) => share.is_active);
 
   return (
     <>
@@ -170,87 +141,14 @@ export default function Records() {
         }
         action={
           isPatient && (
-            <Button onClick={() => setFormIsOpen(true)}>
+            <Button onClick={() => setUploadOpen(true)}>
               <FilePlus2 size={15} /> Upload a record
             </Button>
           )
         }
       />
 
-      <Alert>{error}</Alert>
-      <Alert variant="success">{notice}</Alert>
-
-      {formIsOpen && (
-        <Card as="form" tone="strong" onSubmit={handleUpload} className="animate-rise mb-5 p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-ink-900">Upload a record</h2>
-            <IconButton onClick={() => setFormIsOpen(false)}>
-              <X size={16} />
-            </IconButton>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Title"
-              required
-              placeholder="Blood test results"
-              value={title}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-            <Select label="Type" value={kind} onChange={(event) => setKind(event.target.value)}>
-              {KINDS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
-            <Input
-              label="Date on the document"
-              type="date"
-              required
-              value={documentDate}
-              onChange={(event) => setDocumentDate(event.target.value)}
-            />
-            <Input
-              label="Issued by"
-              placeholder="Lab or hospital name"
-              value={issuedBy}
-              onChange={(event) => setIssuedBy(event.target.value)}
-            />
-          </div>
-
-          <div className="mt-4">
-            <Textarea
-              label="Notes"
-              rows={2}
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </div>
-
-          <label className="mt-4 block">
-            <span className="mb-1.5 block text-sm font-medium text-ink-700">
-              File (PDF, JPG or PNG, up to 10 MB)
-            </span>
-            <input
-              type="file"
-              accept=".pdf,.jpg,.jpeg,.png"
-              required
-              onChange={(event) => setFile(event.target.files[0])}
-              className="w-full rounded-xl border border-brand-200/70 bg-white/80 px-3.5 py-2.5 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-brand-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
-            />
-          </label>
-
-          <div className="mt-5 flex gap-2">
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Uploading…" : "Upload"}
-            </Button>
-            <Button variant="secondary" onClick={() => setFormIsOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </Card>
-      )}
+      <Alert onRetry={reload}>{error}</Alert>
 
       {isPatient && activeShares.length > 0 && (
         <Card className="animate-rise mb-5 p-5">
@@ -262,29 +160,29 @@ export default function Records() {
                 className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white/60 px-3 py-2"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink-900">
-                    {share.document_title}
-                  </p>
+                  <p className="truncate text-sm font-medium text-ink-900">{share.document_title}</p>
                   <p className="text-xs text-ink-500">
-                    {share.shared_with_name || `User #${share.shared_with}`} · until{" "}
-                    {new Date(share.expires_at).toLocaleDateString()}
+                    {share.shared_with_name || `User #${share.shared_with}`} · until {formatDate(share.expires_at)}
                   </p>
                 </div>
-                <button
-                  onClick={() => handleRevoke(share.id)}
-                  className="text-xs font-medium text-rose-600 hover:underline"
-                >
+                <Button size="sm" variant="danger-ghost" onClick={() => setRevoking(share)}>
                   Revoke
-                </button>
+                </Button>
               </div>
             ))}
           </div>
         </Card>
       )}
 
-      {isLoading && <Loading message="Fetching your records…" />}
+      {documents.length > 1 && (
+        <div className="mb-4">
+          <Chips label="Record type" options={kindOptions} value={kind} onChange={setKind} />
+        </div>
+      )}
 
-      {!isLoading && documents.length === 0 && (
+      {isLoading && !data && <Loading message="Fetching your records…" />}
+
+      {data && documents.length === 0 && (
         <EmptyState
           mood="caring"
           title={isPatient ? "No records yet" : "Nothing shared with you"}
@@ -293,55 +191,49 @@ export default function Records() {
               ? "Upload a prescription or report and it stays here for good."
               : "Records appear here when a patient shares them with you."
           }
+          action={
+            isPatient && (
+              <Button onClick={() => setUploadOpen(true)}>
+                <FilePlus2 size={15} /> Upload your first record
+              </Button>
+            )
+          }
         />
       )}
 
-      {documents.length > 0 && (
+      {shown.length > 0 && (
         <div className="stagger grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {documents.map((document) => (
+          {shown.map((document) => (
             <Card key={document.id} className="lift flex flex-col p-5">
               <div className="mb-3 flex items-start justify-between gap-2">
                 <span className="rounded-xl bg-brand-50 p-2 text-brand-600">
                   <FileText size={16} />
                 </span>
-                <Badge tone={KIND_TONES[document.kind] ?? "neutral"}>
-                  {KINDS.find((k) => k.value === document.kind)?.label ?? document.kind}
+                <Badge tone={KIND_TONES[document.kind]}>
+                  {KINDS.find((option) => option.value === document.kind)?.label ?? document.kind}
                 </Badge>
               </div>
 
               <p className="font-medium text-ink-900">{document.title}</p>
               <p className="mt-0.5 text-xs text-ink-500">
-                {new Date(document.document_date).toLocaleDateString()}
+                {formatDate(document.document_date)}
                 {document.issued_by && ` · ${document.issued_by}`}
               </p>
-              {!isPatient && (
-                <p className="mt-1 text-xs text-ink-500">{document.patient_name}</p>
-              )}
-              {document.notes && (
-                <p className="mt-2 line-clamp-2 text-sm text-ink-500">{document.notes}</p>
-              )}
+              {!isPatient && <p className="mt-1 text-xs font-medium text-ink-700">{document.patient_name}</p>}
+              {document.notes && <p className="mt-2 line-clamp-2 text-sm text-ink-500">{document.notes}</p>}
 
-              <div className="mt-4 flex flex-wrap gap-3 border-t border-white/70 pt-3">
-                <button
-                  onClick={() => downloadDocument(document.id, document.title)}
-                  className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-                >
-                  <Download size={13} /> Download
-                </button>
+              <div className="mt-auto flex flex-wrap gap-1.5 border-t border-white/70 pt-3">
+                <Button size="sm" variant="ghost" busy={downloadingId === document.id} onClick={() => download(document)}>
+                  {downloadingId !== document.id && <Download size={13} />} Download
+                </Button>
                 {isPatient && (
                   <>
-                    <button
-                      onClick={() => handleShare(document.id)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-                    >
+                    <Button size="sm" variant="ghost" onClick={() => setSharing(document)}>
                       <Share2 size={13} /> Share
-                    </button>
-                    <button
-                      onClick={() => showAccessLog(document.id)}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-ink-500 hover:underline"
-                    >
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setAccessLogFor(document)}>
                       <Eye size={13} /> Who viewed
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>
@@ -350,28 +242,271 @@ export default function Records() {
         </div>
       )}
 
-      {accessLog && (
-        <Card tone="strong" className="animate-rise mt-5 p-5">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-semibold text-ink-900">Who has viewed this record</h2>
-            <IconButton onClick={() => setAccessLog(null)}>
-              <X size={16} />
-            </IconButton>
-          </div>
-          {accessLog.length === 0 ? (
-            <p className="text-sm text-ink-500">Nobody has opened it yet.</p>
-          ) : (
-            <ul className="space-y-1 text-sm text-ink-700">
-              {accessLog.map((entry) => (
-                <li key={entry.id}>
-                  {entry.viewed_by_name || `User #${entry.viewed_by}`} ·{" "}
-                  {new Date(entry.viewed_at).toLocaleString()}
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
+      {uploadOpen && (
+        <UploadModal
+          onClose={() => setUploadOpen(false)}
+          onSaved={(title) => {
+            setUploadOpen(false);
+            toast.success(`“${title}” uploaded.`);
+            reload();
+          }}
+        />
       )}
+
+      {sharing && (
+        <ShareModal
+          document={sharing}
+          doctors={data?.doctors ?? []}
+          onClose={() => setSharing(null)}
+          onShared={(message) => {
+            setSharing(null);
+            toast.success(message);
+            reload();
+          }}
+        />
+      )}
+
+      {accessLogFor && <AccessLogModal document={accessLogFor} onClose={() => setAccessLogFor(null)} />}
+
+      <ConfirmDialog
+        open={Boolean(revoking)}
+        title="Stop sharing this record?"
+        message={
+          revoking &&
+          `${revoking.shared_with_name || "The doctor"} will no longer be able to open “${revoking.document_title}”.`
+        }
+        confirmLabel="Revoke access"
+        workingLabel="Revoking…"
+        isWorking={isWorking}
+        onConfirm={confirmRevoke}
+        onCancel={() => setRevoking(null)}
+      />
     </>
+  );
+}
+
+function UploadModal({ onClose, onSaved }) {
+  const [title, setTitle] = useState("");
+  const [kind, setKind] = useState("lab_report");
+  const [documentDate, setDocumentDate] = useState("");
+  const [issuedBy, setIssuedBy] = useState("");
+  const [notes, setNotes] = useState("");
+  const [file, setFile] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  function pick(chosen) {
+    if (!chosen) return;
+    const extension = chosen.name.slice(chosen.name.lastIndexOf(".")).toLowerCase();
+    if (!ACCEPTED.includes(extension)) {
+      setError("Only PDF, JPG or PNG files can be uploaded.");
+      return;
+    }
+    if (chosen.size > MAX_BYTES) {
+      setError(`That file is ${sizeLabel(chosen.size)}. The limit is 10 MB.`);
+      return;
+    }
+    setError("");
+    setFile(chosen);
+    // Name the record after the file when the title is still empty.
+    if (!title) setTitle(chosen.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    if (!file) return setError("Choose a file to upload.");
+
+    setIsSaving(true);
+    setError("");
+    const form = new FormData();
+    form.append("title", title);
+    form.append("kind", kind);
+    form.append("document_date", documentDate);
+    form.append("issued_by", issuedBy);
+    form.append("notes", notes);
+    form.append("file", file);
+
+    try {
+      await uploadDocument(form);
+      onSaved(title);
+    } catch (problem) {
+      setError(apiError(problem, "Could not upload that file."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      size="lg"
+      title="Upload a record"
+      error={error}
+      busy={isSaving}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" busy={isSaving}>
+            {isSaving ? "Uploading…" : "Upload"}
+          </Button>
+        </>
+      }
+    >
+      <label
+        onDragOver={(event) => {
+          event.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(event) => {
+          event.preventDefault();
+          setDragging(false);
+          pick(event.dataTransfer.files[0]);
+        }}
+        className={`mb-5 flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-8 text-center transition-colors focus-within:border-brand-500 ${
+          dragging ? "border-brand-500 bg-brand-50" : file ? "border-emerald-300 bg-emerald-50/60" : "border-brand-200 bg-brand-50/40 hover:bg-brand-50"
+        }`}
+      >
+        <UploadCloud size={28} className={file ? "text-emerald-600" : "text-brand-600"} />
+        {file ? (
+          <>
+            <p className="mt-2 text-sm font-medium text-ink-900">{file.name}</p>
+            <p className="text-xs text-ink-500">{sizeLabel(file.size)} · click to choose a different file</p>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-sm font-medium text-ink-900">Drop a file here, or click to choose</p>
+            <p className="text-xs text-ink-500">PDF, JPG or PNG, up to 10 MB</p>
+          </>
+        )}
+        <input
+          type="file"
+          accept={ACCEPTED.join(",")}
+          onChange={(event) => pick(event.target.files[0])}
+          className="sr-only"
+        />
+      </label>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input label="Title" required placeholder="Blood test results" value={title} onChange={(event) => setTitle(event.target.value)} />
+        <Select label="Type" value={kind} onChange={(event) => setKind(event.target.value)}>
+          {KINDS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </Select>
+        <Input
+          label="Date on the document"
+          type="date"
+          required
+          max={localISODate()}
+          value={documentDate}
+          onChange={(event) => setDocumentDate(event.target.value)}
+        />
+        <Input label="Issued by" placeholder="Lab or hospital name" value={issuedBy} onChange={(event) => setIssuedBy(event.target.value)} />
+      </div>
+      <div className="mt-4">
+        <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.target.value)} />
+      </div>
+    </Modal>
+  );
+}
+
+function ShareModal({ document, doctors, onClose, onShared }) {
+  const [doctorId, setDoctorId] = useState("");
+  const [days, setDays] = useState("7");
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    const doctor = doctors.find((row) => String(row.id) === doctorId);
+    if (!doctor) return setError("Choose a doctor to share with.");
+
+    setIsSaving(true);
+    setError("");
+    try {
+      await shareDocument(document.id, doctor.user, inDays(Number(days)));
+      const span = SHARE_DAYS.find((option) => option.value === days)?.label;
+      onShared(`${doctorLabel(doctor)} can open “${document.title}” for ${span}.`);
+    } catch (problem) {
+      setError(apiError(problem, "Could not share this record."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      title="Share with a doctor"
+      subtitle={`“${document.title}”`}
+      error={error}
+      busy={isSaving}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" busy={isSaving}>
+            {isSaving ? "Sharing…" : "Share"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <Select
+          label="Doctor"
+          required
+          placeholder={doctors.length ? "Choose a doctor" : "No doctors to choose from"}
+          value={doctorId}
+          onChange={(event) => setDoctorId(event.target.value)}
+        >
+          {doctors.map((doctor) => (
+            <option key={doctor.id} value={doctor.id}>
+              {doctorLabel(doctor)} · {doctor.specialization}
+            </option>
+          ))}
+        </Select>
+        <fieldset>
+          <legend className="mb-1.5 text-sm font-medium text-ink-700">For how long</legend>
+          <Chips label="For how long" options={SHARE_DAYS} value={days} onChange={setDays} />
+        </fieldset>
+        <p className="text-xs text-ink-500">
+          Access ends by itself after that. You can revoke it sooner, and see each time it was opened.
+        </p>
+      </div>
+    </Modal>
+  );
+}
+
+function AccessLogModal({ document, onClose }) {
+  const load = useCallback(() => fetchDocumentAccessLog(document.id), [document.id]);
+  const { data, error, isLoading } = useLoader(load, "Could not load the access log.");
+
+  return (
+    <Modal open title="Who has opened this record" subtitle={`“${document.title}”`} onClose={onClose}>
+      <Alert>{error}</Alert>
+      {isLoading && <Loading message="Checking…" />}
+      {data && data.length === 0 && <p className="text-sm text-ink-500">Nobody has opened it yet.</p>}
+      {data && data.length > 0 && (
+        <ul className="divide-y divide-brand-100 text-sm">
+          {data.map((entry) => (
+            <li key={entry.id} className="flex justify-between gap-3 py-2">
+              <span className="font-medium text-ink-900">{entry.viewed_by_name || `User #${entry.viewed_by}`}</span>
+              <span className="text-ink-500">{formatDateTime(entry.viewed_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Modal>
   );
 }
