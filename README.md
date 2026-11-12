@@ -72,7 +72,7 @@ Django admin alike, and sign-in attempts are rate limited per address.
 
 **Backend** — Python 3.12, Django 6.1, Django REST Framework 3.18, SimpleJWT (access and
 refresh tokens with rotation and blacklisting), django-filter, drf-spectacular for the OpenAPI
-schema, SQLite by default.
+schema, PostgreSQL in every environment.
 
 **Frontend** — React 19, Vite 8, Tailwind CSS 4, React Router 7, Axios with an interceptor
 that refreshes expired tokens, lucide-react for icons.
@@ -140,15 +140,29 @@ DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:5174
 TIME_ZONE=Asia/Dhaka
+DATABASE_URL=postgres://medidesk:your-password@localhost:5432/medidesk
 ```
 
 Set `DEBUG=True` for local development. Leave it `False` anywhere public.
 
 ### 5. Set up the database
 
+The project runs on PostgreSQL everywhere and will not start without `DATABASE_URL`.
+Install PostgreSQL (16 or later), then create the app's user and database. `psql` asks for
+the password of your `postgres` superuser:
+
+```bash
+psql -h localhost -U postgres -c "CREATE ROLE medidesk LOGIN PASSWORD 'your-password' CREATEDB;"
+psql -h localhost -U postgres -c "CREATE DATABASE medidesk OWNER medidesk ENCODING 'UTF8' TEMPLATE template0;"
+```
+
+`CREATEDB` lets the test runner create and drop its own `test_medidesk` database. Put the same
+password in `DATABASE_URL`, then create the tables:
+
 ```bash
 cd hms
 python manage.py migrate
+python manage.py createcachetable
 ```
 
 ### 6. Load the demo data
@@ -337,7 +351,7 @@ Full walkthrough, including the superuser step and troubleshooting:
 | `ALLOWED_HOSTS` | yes | Comma-separated hostnames the backend will answer for. |
 | `CORS_ALLOWED_ORIGINS` | yes | Comma-separated frontend origins allowed to call the API. |
 | `CSRF_TRUSTED_ORIGINS` | no | Origins trusted for form and admin POSTs. Needed for the admin behind HTTPS. |
-| `DATABASE_URL` | no | Postgres connection string. Falls back to the local SQLite file. |
+| `DATABASE_URL` | yes | PostgreSQL connection string, `postgres://user:password@host:5432/dbname`. No fallback. |
 | `TIME_ZONE` | no | Defaults to `Asia/Dhaka`. Affects appointment and dose times. |
 | `CACHE_URL` | no | Cache for lockouts and rate limits. Use `dbcache://hms_cache` with more than one worker. |
 | `LOGIN_LOCKOUT_ATTEMPTS` | no | Wrong passwords before an account locks. Defaults to `5`. |

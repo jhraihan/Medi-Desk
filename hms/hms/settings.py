@@ -111,8 +111,12 @@ WSGI_APPLICATION = 'hms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# PostgreSQL everywhere: development, CI and production run the same engine, so a
+# query that only works on SQLite cannot slip through. No default, on purpose — a
+# missing DATABASE_URL fails at startup instead of quietly creating a SQLite file.
+# Format: postgres://user:password@host:5432/dbname
 DATABASES = {
-    'default': env.db('DATABASE_URL', default=f'sqlite:///{BASE_DIR / "db.sqlite3"}'),
+    'default': env.db('DATABASE_URL'),
 }
 
 

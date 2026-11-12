@@ -127,7 +127,8 @@ pre-existing property of the code, not something the Render setup introduced.
 
 ## Local development
 
-Unchanged. Copy `hms/.env.example` to `hms/.env`, then:
+Copy `hms/.env.example` to `hms/.env` and point `DATABASE_URL` at a local PostgreSQL
+database (the README shows how to create one), then:
 
 ```bash
 cd hms
@@ -135,8 +136,8 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-Omitting `DATABASE_URL` falls back to the local SQLite file. `docker-compose.yml`
-still runs the full stack with Postgres and Redis.
+There is no SQLite fallback: development, CI and Render all run PostgreSQL.
+`docker-compose.yml` runs the full stack with its own Postgres container.
 
 ## Troubleshooting
 
