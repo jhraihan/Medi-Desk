@@ -1,17 +1,18 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { BellRing, ChevronDown, FilePlus2, Pill, Plus, Trash2 } from "lucide-react";
+import { BellRing, ChevronDown, FilePlus2, FlaskConical, Pill, Plus, Printer, Receipt, Trash2 } from "lucide-react";
 import {
   appointmentsApi,
   dispensePrescription,
+  openPrintable,
   prescriptionsApi,
   remindersFromPrescription,
 } from "../api.js";
 import { useAuth } from "../auth-context.js";
 import { apiError } from "../errors.js";
-import { formatDate, formatDateTime } from "../format.js";
+import { formatDate, formatDateTime, money } from "../format.js";
 import { useDebounced, useLoader } from "../hooks.js";
-import { appointmentOption, searchMedicines, searchPrescribableAppointments } from "../pickers.js";
+import { appointmentOption, searchLabTests, searchMedicines, searchPrescribableAppointments } from "../pickers.js";
 import { useToast } from "../toast-context.js";
 import {
   Alert,
@@ -46,6 +47,13 @@ function blankItem() {
   return { key: nextKey++, medicine: null, dosage: "", frequency: "", duration: "", instructions: "", quantity: "1" };
 }
 
+function blankTest() {
+  return { key: nextKey++, test: null, instructions: "" };
+}
+
+const TEST_TONES = { ordered: "warning", completed: "success", cancelled: "neutral" };
+const TEST_LABELS = { ordered: "Waiting", completed: "Result ready", cancelled: "Cancelled" };
+
 export default function Prescriptions() {
   const { user } = useAuth();
   const toast = useToast();
@@ -53,6 +61,7 @@ export default function Prescriptions() {
   const canDispense = ["pharmacist", "admin"].includes(role);
   const canPrescribe = ["doctor", "admin"].includes(role);
   const isPatient = role === "patient";
+  const canSeeBills = ["doctor", "admin", "patient"].includes(role);
 
   // ?new=1&appointment=12 comes from the Prescribe button on an appointment.
   const [params, setParams] = useSearchParams();
@@ -67,6 +76,7 @@ export default function Prescriptions() {
   const [reminding, setReminding] = useState(null);
   const [timesPerDay, setTimesPerDay] = useState("2");
   const [isWorking, setIsWorking] = useState(false);
+  const [justIssued, setJustIssued] = useState(null);
 
   useEffect(() => {
     if (params.has("new")) {
@@ -219,7 +229,19 @@ export default function Prescriptions() {
                   </Badge>
                 </td>
                 <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-                  <div className="flex justify-end gap-1.5">
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => openPrintable(`/print/prescription/${prescription.id}`)}
+                    >
+                      <Printer size={13} /> Print
+                    </Button>
+                    {canSeeBills && prescription.bill_id && (
+                      <Button size="sm" variant="ghost" onClick={() => openPrintable(`/print/bill/${prescription.bill_id}`)}>
+                        <Receipt size={13} /> Bill
+                      </Button>
+                    )}
                     {canDispense && prescription.status === "issued" && (
                       <Button size="sm" onClick={() => setDispensing(prescription)}>
                         Dispense
@@ -257,13 +279,28 @@ export default function Prescriptions() {
         <PrescribeModal
           appointmentId={writing.appointment}
           onClose={() => setWriting(null)}
-          onSaved={() => {
+          onSaved={(prescription) => {
             setWriting(null);
-            toast.success("Prescription issued. The pharmacy can dispense it now.");
+            toast.success("Prescription issued and added to the patient's bill.");
+            setJustIssued(prescription);
             reload();
           }}
         />
       )}
+
+      <ConfirmDialog
+        open={Boolean(justIssued)}
+        tone="primary"
+        title="Print the prescription?"
+        message={`Hand ${justIssued?.patient_name ?? "the patient"} a printed copy. The medicines and tests are already on their bill.`}
+        confirmLabel="Print now"
+        workingLabel="Opening…"
+        onConfirm={() => {
+          openPrintable(`/print/prescription/${justIssued.id}`);
+          setJustIssued(null);
+        }}
+        onCancel={() => setJustIssued(null)}
+      />
 
       <ConfirmDialog
         open={Boolean(dispensing)}
@@ -314,6 +351,7 @@ export default function Prescriptions() {
 
 function PrescriptionDetail({ prescription }) {
   const items = prescription.prescription_medicines ?? [];
+  const tests = prescription.test_orders ?? [];
   return (
     <div className="grid gap-4 rounded-xl bg-white/70 p-4 md:grid-cols-[1fr_2fr]">
       <div className="space-y-3 text-sm">
@@ -332,6 +370,28 @@ function PrescriptionDetail({ prescription }) {
         )}
         {prescription.follow_up_date && (
           <p className="text-xs font-medium text-brand-700">Follow up on {formatDate(prescription.follow_up_date)}</p>
+        )}
+        {tests.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-ink-500">Tests</p>
+            <ul className="mt-1 space-y-1.5">
+              {tests.map((test) => (
+                <li key={test.id} className="rounded-lg bg-white px-2.5 py-1.5 ring-1 ring-brand-100">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5 font-medium text-ink-900">
+                      <FlaskConical size={13} className="text-brand-600" /> {test.test_name}
+                    </span>
+                    <Badge tone={TEST_TONES[test.status]}>{TEST_LABELS[test.status] ?? test.status}</Badge>
+                  </div>
+                  {test.result && (
+                    <p className={`mt-1 text-xs ${test.result_flag === "abnormal" ? "text-rose-700" : "text-ink-700"}`}>
+                      {test.result}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
       </div>
       <ul className="space-y-2">
@@ -359,6 +419,7 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
   const [notes, setNotes] = useState("");
   const [followUp, setFollowUp] = useState("");
   const [items, setItems] = useState(() => [blankItem()]);
+  const [tests, setTests] = useState([]);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -379,20 +440,33 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
     setItems((current) => current.map((item) => (item.key === key ? { ...item, ...changes } : item)));
   }
 
+  function updateTest(key, changes) {
+    setTests((current) => current.map((row) => (row.key === key ? { ...row, ...changes } : row)));
+  }
+
+  const medicineCost = items.reduce(
+    (sum, item) => sum + (item.medicine ? Number(item.medicine.price ?? 0) * (Number(item.quantity) || 0) : 0),
+    0,
+  );
+  const testCost = tests.reduce((sum, row) => sum + (row.test ? Number(row.test.price ?? 0) : 0), 0);
+
   async function handleSubmit(event) {
     event.preventDefault();
     setError("");
     if (!appointment) return setError("Choose the visit this prescription is for.");
-    if (items.some((item) => !item.medicine)) return setError("Choose a medicine on every row, or remove the empty row.");
+    const medicines = items.filter((item) => item.medicine || item.dosage || item.duration);
+    if (medicines.some((item) => !item.medicine)) return setError("Choose a medicine on every row, or remove the empty row.");
+    if (tests.some((row) => !row.test)) return setError("Choose a test on every test row, or remove the empty row.");
 
     setIsSaving(true);
     try {
-      await prescriptionsApi.create({
+      const saved = await prescriptionsApi.create({
         appointment: appointment.value,
         diagnosis,
         notes,
         follow_up_date: followUp || null,
-        medicines: items.map((item) => ({
+        tests: tests.map((row) => ({ test: row.test.value, instructions: row.instructions })),
+        medicines: medicines.map((item) => ({
           medicine: item.medicine.value,
           dosage: item.dosage,
           frequency: item.frequency,
@@ -401,7 +475,7 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
           quantity: Number(item.quantity) || 1,
         })),
       });
-      onSaved();
+      onSaved(saved);
     } catch (problem) {
       setError(apiError(problem, "Could not save that prescription."));
     } finally {
@@ -453,7 +527,7 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
               <div key={item.key} className="rounded-xl bg-brand-50/50 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-xs font-semibold uppercase tracking-wider text-ink-500">#{index + 1}</span>
-                  {items.length > 1 && (
+                  {(items.length > 1 || tests.length > 0) && (
                     <IconButton
                       variant="danger"
                       label="Remove this medicine"
@@ -524,6 +598,48 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
             <Plus size={14} /> Add another medicine
           </Button>
         </fieldset>
+
+        <fieldset className="rounded-2xl border border-brand-100 p-4">
+          <legend className="px-1 text-sm font-semibold text-ink-900">Tests</legend>
+          {tests.length === 0 && <p className="text-sm text-ink-500">No tests ordered.</p>}
+          <div className="space-y-3">
+            {tests.map((row) => (
+              <div key={row.key} className="grid items-end gap-3 rounded-xl bg-brand-50/50 p-3 md:grid-cols-[3fr_3fr_auto]">
+                <SearchPicker
+                  label="Test"
+                  required
+                  placeholder="CBC, X-ray, ECG…"
+                  value={row.test}
+                  onChange={(test) => updateTest(row.key, { test })}
+                  search={searchLabTests}
+                />
+                <Input
+                  label="Note for the lab"
+                  placeholder="Fasting, left knee…"
+                  value={row.instructions}
+                  onChange={(event) => updateTest(row.key, { instructions: event.target.value })}
+                />
+                <IconButton
+                  variant="danger"
+                  label="Remove this test"
+                  onClick={() => setTests((current) => current.filter((test) => test.key !== row.key))}
+                >
+                  <Trash2 size={15} />
+                </IconButton>
+              </div>
+            ))}
+          </div>
+          <Button variant="secondary" size="sm" className="mt-3" onClick={() => setTests((current) => [...current, blankTest()])}>
+            <FlaskConical size={14} /> Order a test
+          </Button>
+        </fieldset>
+
+        {(medicineCost > 0 || testCost > 0) && (
+          <p className="rounded-xl bg-brand-50/70 px-4 py-3 text-sm text-ink-700">
+            Adds <span className="font-semibold text-ink-900">{money(medicineCost + testCost)}</span> to the
+            patient's bill ({money(medicineCost)} medicines, {money(testCost)} tests), on top of the consultation fee.
+          </p>
+        )}
       </div>
     </Modal>
   );

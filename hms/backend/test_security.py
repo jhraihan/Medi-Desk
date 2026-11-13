@@ -61,13 +61,20 @@ class LoginProtectionTests(APITestCase):
         response = self._login(PASSWORD, APIClient(REMOTE_ADDR='10.0.0.99'))
         self.assertEqual(response.status_code, 401)
 
-    def test_login_is_rate_limited_per_address(self):
-        codes = []
-        for index in range(12):
-            codes.append(self.client.post(
-                '/api/v1/login/', {'username': f'nobody{index}', 'password': 'x'}, format='json',
-            ).status_code)
-        self.assertEqual(codes[-1], 429)
+    @override_settings(LOGIN_ADDRESS_FAILURES=6)
+    def test_failed_attempts_are_limited_per_address(self):
+        for index in range(6):
+            self.client.post('/api/v1/login/', {'username': f'nobody{index}', 'password': 'x'}, format='json')
+
+        response = self._login(PASSWORD)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn('Try again in 15 minutes', response.data['detail'])
+        self.assertIn('Retry-After', response)
+
+    def test_successful_sign_ins_do_not_use_up_the_address_limit(self):
+        # A ward of staff behind one public address signing in at shift change.
+        for _ in range(25):
+            self.assertEqual(self._login(PASSWORD).status_code, 200)
 
     @override_settings(SECURE_SSL_REDIRECT=False, STORAGES={
         'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},

@@ -20,6 +20,24 @@ def _key(username):
     return f'login-failures:{str(username or "").strip().lower()}'
 
 
+def _address_key(address):
+    return f'login-address-failures:{address}'
+
+
+def address_is_blocked(address):
+    """Too many wrong passwords from one address, across any number of usernames.
+
+    Only failures count. Staff in one hospital usually share a public address, so
+    counting every sign-in would lock the whole building out at shift change.
+    """
+    return cache.get(_address_key(address), 0) >= settings.LOGIN_ADDRESS_FAILURES
+
+
+def record_address_failure(address):
+    key = _address_key(address)
+    cache.set(key, cache.get(key, 0) + 1, settings.LOGIN_LOCKOUT_SECONDS)
+
+
 def failure_count(username):
     return cache.get(_key(username), 0)
 

@@ -290,7 +290,12 @@ function ScheduleModal({ onClose, onSaved }) {
   const [instructions, setInstructions] = useState("");
   const [times, setTimes] = useState(["09:00", "21:00"]);
   const [startDate, setStartDate] = useState(() => localISODate());
-  const [endDate, setEndDate] = useState("");
+  // A week is the commonest course; the patient can change it.
+  const [endDate, setEndDate] = useState(() => {
+    const end = new Date();
+    end.setDate(end.getDate() + 6);
+    return localISODate(end);
+  });
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 

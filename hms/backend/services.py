@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
@@ -19,6 +20,7 @@ from .models import (
     Notification,
     Patient,
     Prescription,
+    TestOrder,
     User,
 )
 
@@ -196,21 +198,57 @@ def _reorder_level_for(medicine):
     return max(levels) if levels else 0
 
 
-def bill_for_appointment(appointment, actor=None):
-    """Draft a bill seeded with the doctor's consultation fee."""
-    bill = Bill.objects.create(
-        patient=appointment.patient,
-        appointment=appointment,
-        amount=appointment.doctor.consultation_fee,
-    )
-    BillItem.objects.create(
-        bill=bill,
-        description=f'Consultation with {appointment.doctor}',
-        service_type=BillItem.ServiceType.CONSULTATION,
-        quantity=1,
-        unit_price=appointment.doctor.consultation_fee,
-    )
+def recompute_bill(bill):
+    """A bill with line items is worth the sum of its lines; paid follows the payments."""
+    if bill.items.exists():
+        bill.amount = sum((item.line_total for item in bill.items.all()), Decimal('0'))
+    bill.paid = bill.total > 0 and bill.amount_paid >= bill.total
+    bill.save(update_fields=['amount', 'paid'])
     return bill
+
+
+@transaction.atomic
+def sync_visit_bill(appointment):
+    """Keep a visit's bill in step with its consultation, prescription and tests.
+
+    The first prescription or test order for a visit opens its bill. Later changes
+    rebuild only the lines generated here, so anything the front desk added by hand
+    stays. Once a payment has been taken the bill is left alone and the front desk
+    adjusts it, so a receipt already handed over never changes underneath them.
+    """
+    bill = appointment.bills.order_by('created_at').first()
+    if bill is None:
+        bill = Bill.objects.create(patient=appointment.patient, appointment=appointment, amount=0)
+    elif bill.payments.exists():
+        return bill
+
+    bill.items.filter(generated=True).delete()
+    lines = []
+
+    doctor = appointment.doctor
+    hand_billed_consultation = bill.items.filter(service_type=BillItem.ServiceType.CONSULTATION).exists()
+    if doctor.consultation_fee and not hand_billed_consultation:
+        lines.append(BillItem(
+            bill=bill, generated=True, service_type=BillItem.ServiceType.CONSULTATION,
+            description=f'Consultation — {doctor}', quantity=1, unit_price=doctor.consultation_fee))
+
+    prescription = Prescription.objects.filter(appointment=appointment).first()
+    if prescription:
+        for item in prescription.items.select_related('medicine'):
+            medicine = item.medicine
+            if medicine.unit_price:
+                lines.append(BillItem(
+                    bill=bill, generated=True, service_type=BillItem.ServiceType.MEDICINE,
+                    description=f'{medicine.name} ({medicine.unit})', quantity=item.quantity,
+                    unit_price=medicine.unit_price))
+
+    for order in appointment.test_orders.exclude(status=TestOrder.Status.CANCELLED).select_related('test'):
+        lines.append(BillItem(
+            bill=bill, generated=True, service_type=BillItem.ServiceType.LAB,
+            description=order.test.name, quantity=1, unit_price=order.test.price))
+
+    BillItem.objects.bulk_create(lines)
+    return recompute_bill(bill)
 
 
 def queue_for_doctor(doctor, day=None):

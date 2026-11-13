@@ -1,5 +1,5 @@
 import random
-from datetime import date, time, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from django.conf import settings
@@ -17,6 +17,7 @@ from backend.models import (
     Doctor,
     DoctorSchedule,
     Donor,
+    LabTest,
     MedicationSchedule,
     Medicine,
     MedicineStock,
@@ -24,9 +25,10 @@ from backend.models import (
     Payment,
     Prescription,
     PrescriptionMedicine,
+    TestOrder,
     User,
 )
-from backend.services import build_doses
+from backend.services import build_doses, recompute_bill, sync_visit_bill
 
 PASSWORD = 'Demo!2345'
 
@@ -52,13 +54,97 @@ PATIENTS = [
     ('lucas', 'Lucas', 'Silva', date(1996, 5, 30), 'male', 'O+', ''),
 ]
 
+# Name, generic name, unit, price per unit in taka. Roughly what a Dhaka pharmacy
+# charges, so bills look believable in a demo.
 MEDICINES = [
     ('Amoxicillin', 'Amoxicillin trihydrate', 'box', '12.50'),
     ('Atorvastatin', 'Atorvastatin calcium', 'strip', '18.00'),
     ('Ibuprofen', 'Ibuprofen', 'strip', '6.75'),
     ('Metformin', 'Metformin HCl', 'box', '9.20'),
     ('Salbutamol', 'Salbutamol sulfate', 'inhaler', '22.00'),
+    ('Paracetamol 500 mg', 'Paracetamol', 'tablet', '1.20'),
+    ('Paracetamol syrup 120 ml', 'Paracetamol', 'bottle', '35.00'),
+    ('Omeprazole 20 mg', 'Omeprazole', 'capsule', '5.00'),
+    ('Esomeprazole 20 mg', 'Esomeprazole magnesium', 'capsule', '7.00'),
+    ('Pantoprazole 40 mg', 'Pantoprazole sodium', 'tablet', '7.00'),
+    ('Cetirizine 10 mg', 'Cetirizine HCl', 'tablet', '3.00'),
+    ('Fexofenadine 120 mg', 'Fexofenadine HCl', 'tablet', '8.00'),
+    ('Montelukast 10 mg', 'Montelukast sodium', 'tablet', '16.00'),
+    ('Azithromycin 500 mg', 'Azithromycin', 'tablet', '40.00'),
+    ('Ciprofloxacin 500 mg', 'Ciprofloxacin', 'tablet', '15.00'),
+    ('Cefixime 200 mg', 'Cefixime', 'capsule', '35.00'),
+    ('Cefuroxime 500 mg', 'Cefuroxime axetil', 'tablet', '50.00'),
+    ('Flucloxacillin 500 mg', 'Flucloxacillin', 'capsule', '12.00'),
+    ('Metronidazole 400 mg', 'Metronidazole', 'tablet', '2.00'),
+    ('Amlodipine 5 mg', 'Amlodipine besylate', 'tablet', '6.00'),
+    ('Losartan 50 mg', 'Losartan potassium', 'tablet', '8.00'),
+    ('Bisoprolol 5 mg', 'Bisoprolol fumarate', 'tablet', '8.00'),
+    ('Rosuvastatin 10 mg', 'Rosuvastatin calcium', 'tablet', '18.00'),
+    ('Clopidogrel 75 mg', 'Clopidogrel', 'tablet', '10.00'),
+    ('Aspirin 75 mg', 'Acetylsalicylic acid', 'tablet', '1.00'),
+    ('Gliclazide 80 mg', 'Gliclazide', 'tablet', '6.00'),
+    ('Sitagliptin 50 mg', 'Sitagliptin', 'tablet', '40.00'),
+    ('Insulin glargine pen', 'Insulin glargine 100 IU/ml', 'pen', '1200.00'),
+    ('Levothyroxine 50 mcg', 'Levothyroxine sodium', 'tablet', '2.00'),
+    ('Diclofenac 50 mg', 'Diclofenac sodium', 'tablet', '2.00'),
+    ('Naproxen 500 mg', 'Naproxen', 'tablet', '8.00'),
+    ('Tramadol 50 mg', 'Tramadol HCl', 'capsule', '8.00'),
+    ('Domperidone 10 mg', 'Domperidone', 'tablet', '3.00'),
+    ('Ondansetron 8 mg', 'Ondansetron', 'tablet', '15.00'),
+    ('Oral rehydration salts', 'ORS', 'sachet', '6.00'),
+    ('Zinc 20 mg', 'Zinc sulfate', 'tablet', '2.50'),
+    ('Calcium + vitamin D3', 'Calcium carbonate, cholecalciferol', 'tablet', '8.00'),
+    ('Iron + folic acid', 'Ferrous fumarate, folic acid', 'capsule', '4.00'),
+    ('Vitamin B complex', 'B vitamins', 'tablet', '1.50'),
+    ('Prednisolone 5 mg', 'Prednisolone', 'tablet', '1.00'),
+    ('Hydrocortisone cream 1%', 'Hydrocortisone', 'tube', '60.00'),
+    ('Clotrimazole cream 1%', 'Clotrimazole', 'tube', '45.00'),
+    ('Budesonide inhaler 200 mcg', 'Budesonide', 'inhaler', '450.00'),
+    ('Ceftriaxone 1 g injection', 'Ceftriaxone sodium', 'vial', '180.00'),
+    ('Normal saline 0.9% 500 ml', 'Sodium chloride', 'bag', '90.00'),
+    ('Lactulose syrup 100 ml', 'Lactulose', 'bottle', '160.00'),
 ]
+
+# Name, category, price in taka, sample result shown once a seeded test is done.
+LAB_TESTS = [
+    ('Complete blood count (CBC)', 'blood', '400', 'Hb 13.4 g/dL, WBC 7,800/µL, platelets 2.6 lakh/µL.'),
+    ('Fasting blood sugar', 'blood', '150', '5.4 mmol/L'),
+    ('Random blood sugar', 'blood', '120', '7.1 mmol/L'),
+    ('HbA1c', 'blood', '900', '6.1 %'),
+    ('Lipid profile', 'blood', '1000', 'Total cholesterol 192 mg/dL, LDL 118, HDL 46, TG 140.'),
+    ('Liver function tests (LFT)', 'blood', '1200', 'ALT 32 U/L, AST 28 U/L, bilirubin 0.8 mg/dL.'),
+    ('Serum creatinine', 'blood', '350', '0.9 mg/dL'),
+    ('Serum electrolytes', 'blood', '900', 'Na 139, K 4.1, Cl 102 mmol/L.'),
+    ('Thyroid stimulating hormone (TSH)', 'blood', '800', '2.3 mIU/L'),
+    ('C-reactive protein (CRP)', 'blood', '600', '4 mg/L'),
+    ('Dengue NS1 antigen', 'blood', '500', 'Negative'),
+    ('Blood grouping & Rh', 'blood', '150', 'B positive'),
+    ('Serum uric acid', 'blood', '350', '5.6 mg/dL'),
+    ('Vitamin D (25-OH)', 'blood', '2500', '24 ng/mL (insufficient)'),
+    ('Urine routine examination', 'urine', '250', 'Pus cells 2-4/HPF, no RBC, no casts.'),
+    ('Stool routine examination', 'urine', '250', 'No ova or parasites seen.'),
+    ('Urine culture & sensitivity', 'urine', '800', 'No growth after 48 hours.'),
+    ('Chest X-ray (PA view)', 'imaging', '600', 'Lung fields clear. Heart size normal.'),
+    ('Ultrasound whole abdomen', 'imaging', '1500', 'Mild fatty liver. Otherwise normal study.'),
+    ('X-ray knee (AP/lateral)', 'imaging', '700', 'Early degenerative change, medial compartment.'),
+    ('CT scan brain', 'imaging', '5000', 'No acute intracranial abnormality.'),
+    ('ECG (12-lead)', 'cardiac', '400', 'Sinus rhythm, 76 bpm. No ST changes.'),
+    ('Echocardiogram', 'cardiac', '2500', 'LVEF 60%. Normal valves.'),
+    ('Exercise tolerance test (ETT)', 'cardiac', '3500', 'Negative for inducible ischaemia.'),
+]
+
+# Sunday to Thursday, the Bangladeshi working week (Monday is 0).
+CLINIC_DAYS = [6, 0, 1, 2, 3]
+
+
+def clinic_time(day, hour, minute=0):
+    """A wall-clock time at the clinic (TIME_ZONE), whatever the hour the seed runs.
+
+    Basing visits on now() put them at 10 PM or midnight when seeded in the evening,
+    outside every doctor's hours.
+    """
+    return timezone.make_aware(datetime.combine(day, time(hour, minute)))
+
 
 DIAGNOSES = [
     'Seasonal viral infection',
@@ -99,8 +185,9 @@ class Command(BaseCommand):
         doctors = self._doctors(departments)
         patients = self._patients()
         medicines = self._medicines()
+        lab_tests = self._lab_tests()
         appointments = self._appointments(doctors, patients)
-        self._prescriptions(appointments, medicines)
+        self._prescriptions(appointments, medicines, lab_tests)
         self._bills(appointments)
         self._queue(appointments)
         self._donors(patients)
@@ -122,6 +209,7 @@ class Command(BaseCommand):
         CareContact.objects.all().delete()
         BloodRequest.objects.all().delete()
         Donor.objects.all().delete()
+        TestOrder.objects.all().delete()
         Payment.objects.all().delete()
         BillItem.objects.all().delete()
         Bill.objects.all().delete()
@@ -183,7 +271,7 @@ class Command(BaseCommand):
                     'license_number': f'LIC{random.randint(10000, 99999)}',
                 },
             )
-            for weekday in range(0, 5):
+            for weekday in CLINIC_DAYS:
                 DoctorSchedule.objects.get_or_create(
                     doctor=doctor, weekday=weekday, start_time=time(9, 0),
                     defaults={'end_time': time(16, 0)},
@@ -226,7 +314,7 @@ class Command(BaseCommand):
             MedicineStock.objects.get_or_create(
                 medicine=medicine, batch_number='B2026A',
                 defaults={
-                    'quantity': random.randint(4, 60),
+                    'quantity': random.randint(60, 600),
                     'reorder_level': 10,
                     'expiry_date': date.today() + timedelta(days=random.randint(45, 500)),
                     'purchase_price': Decimal(price) * Decimal('0.6'),
@@ -235,18 +323,28 @@ class Command(BaseCommand):
             medicines.append(medicine)
         return medicines
 
+    def _lab_tests(self):
+        return [
+            LabTest.objects.get_or_create(
+                name=name, defaults={'category': category, 'price': Decimal(price)})[0]
+            for name, category, price, _ in LAB_TESTS
+        ]
+
     def _appointments(self, doctors, patients):
         if Appointment.objects.exists():
             return list(Appointment.objects.all())
 
         appointments = []
-        base = timezone.now().replace(minute=0, second=0, microsecond=0)
+        today = timezone.localdate()
 
-        # a spread of past (completed) and upcoming appointments
-        for offset in range(-8, 7):
+        # a spread of past (completed) and upcoming appointments, inside clinic hours
+        for offset in range(-11, 10):
             doctor = doctors[offset % len(doctors)]
             patient = patients[offset % len(patients)]
-            when = base + timedelta(days=offset, hours=random.choice([1, 2, 3, 4]))
+            day = today + timedelta(days=offset)
+            if day.weekday() not in CLINIC_DAYS:
+                continue
+            when = clinic_time(day, random.choice([9, 10, 11, 12, 14, 15]), random.choice([0, 30]))
 
             if Appointment.objects.filter(doctor=doctor, appointment_date=when).exists():
                 continue
@@ -261,7 +359,8 @@ class Command(BaseCommand):
             ))
         return appointments
 
-    def _prescriptions(self, appointments, medicines):
+    def _prescriptions(self, appointments, medicines, lab_tests):
+        results = {name: result for name, _, _, result in LAB_TESTS}
         for appointment in appointments:
             if appointment.status != 'completed':
                 continue
@@ -281,8 +380,17 @@ class Command(BaseCommand):
                     dosage=random.choice(['1 tablet', '2 tablets', '5 ml']),
                     frequency=random.choice(['Once daily', 'Twice daily', 'Every 8 hours']),
                     duration=random.choice(['5 days', '7 days', '14 days']),
-                    quantity=random.randint(1, 3),
+                    quantity=random.choice([6, 10, 14, 20]),
                 )
+            # About half the visits come with tests, already reported since the visit is past.
+            if random.random() < 0.5:
+                for test in random.sample(lab_tests, random.randint(1, 2)):
+                    TestOrder.objects.create(
+                        appointment=appointment, test=test, ordered_by=appointment.doctor,
+                        status=TestOrder.Status.COMPLETED, completed_at=timezone.now(),
+                        result=results.get(test.name, 'Within normal limits.'),
+                        result_flag=random.choice([TestOrder.Flag.NORMAL, TestOrder.Flag.NORMAL,
+                                                   TestOrder.Flag.ABNORMAL]))
 
     def _bills(self, appointments):
         for appointment in appointments:
@@ -291,26 +399,14 @@ class Command(BaseCommand):
             if Bill.objects.filter(appointment=appointment).exists():
                 continue
 
-            fee = appointment.doctor.consultation_fee
-            bill = Bill.objects.create(
-                patient=appointment.patient,
-                appointment=appointment,
-                amount=fee,
-                tax=(fee * Decimal('0.05')).quantize(Decimal('0.01')),
-                due_date=date.today() + timedelta(days=14),
-            )
-            BillItem.objects.create(
-                bill=bill,
-                description=f'Consultation with {appointment.doctor}',
-                service_type=BillItem.ServiceType.CONSULTATION,
-                quantity=1,
-                unit_price=fee,
-            )
+            # Consultation, prescribed medicines and tests, exactly as the app bills a visit.
+            bill = sync_visit_bill(appointment)
+            bill.due_date = date.today() + timedelta(days=14)
+            bill.save(update_fields=['due_date'])
 
             if random.random() < 0.6:
-                Payment.objects.create(bill=bill, amount=bill.total, method='card')
-                bill.paid = True
-                bill.save(update_fields=['paid'])
+                Payment.objects.create(bill=bill, amount=bill.total, method=random.choice(['cash', 'card']))
+                recompute_bill(bill)
 
     def _queue(self, appointments):
         today = timezone.localdate()
@@ -318,12 +414,11 @@ class Command(BaseCommand):
 
         doctor = Doctor.objects.first()
         patients = list(Patient.objects.all())
-        base = timezone.now().replace(minute=0, second=0, microsecond=0)
         reasons = ['Fever and cough', 'Follow-up review', 'Chest pain', 'Rash on arms']
 
         index = 0
         while len(todays) < 4 and index < len(patients):
-            when = base + timedelta(hours=index + 1)
+            when = clinic_time(today, 9, 0) + timedelta(minutes=30 * index)
             if not Appointment.objects.filter(doctor=doctor, appointment_date=when).exists():
                 todays.append(Appointment.objects.create(
                     patient=patients[index], doctor=doctor, appointment_date=when,

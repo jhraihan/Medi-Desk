@@ -25,6 +25,7 @@ from .models import (
     DonationRecord,
     Donor,
     DonorResponse,
+    LabTest,
     MedicalDocument,
     MedicationDose,
     MedicationSchedule,
@@ -35,6 +36,7 @@ from .models import (
     Payment,
     Prescription,
     PrescriptionMedicine,
+    TestOrder,
     User,
 )
 from .permissions import role_of
@@ -404,10 +406,33 @@ class MedicineStockAdmin(HospitalAdmin):
         return obj.needs_reorder
 
 
+# ---------------------------------------------------------------- lab tests
+
+@admin.register(LabTest)
+class LabTestAdmin(HospitalAdmin):
+    list_display = ('name', 'category', 'price', 'is_active')
+    list_filter = ('category', 'is_active')
+    list_editable = ('price', 'is_active')
+    search_fields = ('name', 'description')
+
+
+@admin.register(TestOrder)
+class TestOrderAdmin(HospitalAdmin):
+    list_display = ('test', 'appointment', 'status', 'result_flag', 'ordered_at', 'completed_at')
+    list_filter = ('status', 'result_flag', 'test__category')
+    list_select_related = ('test', 'appointment__patient__user', 'appointment__doctor__user')
+    date_hierarchy = 'ordered_at'
+    search_fields = ('test__name', 'appointment__patient__user__first_name',
+                     'appointment__patient__user__last_name', 'appointment__patient__medical_record_number')
+    autocomplete_fields = ('appointment', 'test', 'ordered_by')
+    readonly_fields = ('ordered_at', 'completed_at', 'completed_by')
+
+
 # ---------------------------------------------------------------- billing
 
 class BillItemInline(HospitalTabularInline):
     model = BillItem
+    readonly_fields = ('generated',)
 
 
 class PaymentInline(HospitalTabularInline):

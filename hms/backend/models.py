@@ -293,6 +293,9 @@ class BillItem(models.Model):
         max_length=20, choices=ServiceType.choices, default=ServiceType.CONSULTATION)
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    # Written by services.sync_visit_bill from the visit's prescription and tests, and
+    # rebuilt when those change. Lines staff add by hand are never touched.
+    generated = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.description} x{self.quantity}'
@@ -377,6 +380,61 @@ class AuditLog(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValueError('Audit entries cannot be deleted.')
+
+
+class LabTest(models.Model):
+    """A test the hospital can run, and what it costs."""
+
+    class Category(models.TextChoices):
+        BLOOD = 'blood', 'Blood'
+        URINE = 'urine', 'Urine & stool'
+        IMAGING = 'imaging', 'Imaging'
+        CARDIAC = 'cardiac', 'Cardiac'
+        OTHER = 'other', 'Other'
+
+    name = models.CharField(max_length=150, unique=True)
+    category = models.CharField(max_length=20, choices=Category.choices, default=Category.BLOOD)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    description = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class TestOrder(models.Model):
+    """A test a doctor asked for during a visit, and later its result."""
+
+    class Status(models.TextChoices):
+        ORDERED = 'ordered', 'Ordered'
+        COMPLETED = 'completed', 'Result ready'
+        CANCELLED = 'cancelled', 'Cancelled'
+
+    class Flag(models.TextChoices):
+        NORMAL = 'normal', 'Normal'
+        ABNORMAL = 'abnormal', 'Needs attention'
+
+    appointment = models.ForeignKey(Appointment, on_delete=models.CASCADE, related_name='test_orders')
+    test = models.ForeignKey(LabTest, on_delete=models.PROTECT, related_name='orders')
+    ordered_by = models.ForeignKey(
+        Doctor, on_delete=models.SET_NULL, null=True, blank=True, related_name='test_orders')
+    instructions = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.ORDERED, db_index=True)
+    result = models.TextField(blank=True)
+    result_flag = models.CharField(max_length=10, choices=Flag.choices, blank=True)
+    completed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='test_results_entered')
+    completed_at = models.DateTimeField(null=True, blank=True)
+    ordered_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-ordered_at']
+
+    def __str__(self):
+        return f'{self.test} for {self.appointment.patient}'
 
 
 class Notification(models.Model):

@@ -54,7 +54,19 @@ hidden until they answer yes.
 **Medicine reminders.** A prescription's duration expands into a dose schedule. Missed doses
 are flagged, and a repeated streak of them notifies the patient's care contact.
 
-**Billing.** Itemised bills with partial payments and a running outstanding balance.
+**Billing.** Itemised bills with partial payments and a running outstanding balance. A
+visit's bill builds itself: the consultation fee, every prescribed medicine at its catalogue
+price, and every ordered test. The front desk adds or removes lines and raises bills by
+hand, picking medicines and tests from the catalogue.
+
+**Lab tests.** Doctors order tests from a priced catalogue, on the prescription or on their
+own. The front desk records the result and flags anything that needs attention; the patient
+sees it straight away and can print the report.
+
+**Printing.** Prescriptions (letterhead, doctor's registration number, ℞ list, tests,
+advice, signature line), invoices with a paid/unpaid stamp, and lab reports all print on A4
+from the browser, or save as PDF. The hospital name and address on the letterhead come from
+`HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_PHONE` and `HOSPITAL_EMAIL`.
 
 **Auditing.** Every change to patient, billing, pharmacy and staff records, and every time a
 single patient record, prescription or document is opened, is written to an append-only log.
@@ -324,8 +336,15 @@ Staff accounts are created in the app's Admin section, the Django admin or with
 `createsuperuser`, never through registration. The register endpoint ignores any role sent
 to it and forces `patient`.
 
-Signing in is limited to 10 attempts per hour per address, and 5 wrong passwords lock the
-account for 15 minutes.
+5 wrong passwords lock an account for 15 minutes, and 20 wrong passwords from one address
+block that address for 15 minutes. Successful sign-ins never count, so a whole hospital
+behind one public address can sign in at shift change.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/auth/password/` | POST | Change your own password; signs out your other sessions |
+| `/api/v1/auth/password-reset/` | POST | Email a reset link (same reply whether or not the email is known) |
+| `/api/v1/auth/password-reset/confirm/` | POST | Set a new password from the emailed link |
 
 ## Deployment
 
@@ -361,6 +380,14 @@ Full walkthrough, including the superuser step and troubleshooting:
 | `API_DOCS_PUBLIC` | no | `True` opens Swagger UI and the schema to everyone. Defaults to `False`. |
 | `FRONTEND_URL` | no | Target of the Django admin's "View site" link. Defaults to the first CORS origin. |
 | `DEMO_MODE` | no | Lets `seed_demo` run with `DEBUG` off. Never set it where there is real data. |
+| `LOGIN_ADDRESS_FAILURES` | no | Wrong passwords from one address before it is refused. Defaults to `20`. |
+| `EMAIL_URL` | no | SMTP server for password-reset email, e.g. `smtp+tls://user:pass@host:587`. Unset, emails print to the log. |
+| `DEFAULT_FROM_EMAIL` | no | Sender address for those emails. |
+| `SENTRY_DSN` | no | Turns on error reporting to Sentry. |
+| `LOG_LEVEL` | no | Defaults to `INFO`. Logs go to stdout. |
+| `MEDIA_ROOT` | no | Where uploaded documents are stored. Point it at a persistent disk in production. |
+| `CONN_MAX_AGE` | no | Seconds to keep database connections open. Defaults to `60`. |
+| `HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_PHONE`, `HOSPITAL_EMAIL` | no | Letterhead on printed prescriptions, invoices and lab reports. |
 
 `frontend/.env` — optional.
 

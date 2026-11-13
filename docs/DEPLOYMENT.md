@@ -59,15 +59,16 @@ the sidebar. Create every other staff account from there.
 
 ### Optional: demo data
 
-`seed_demo` refuses to run while `DEBUG` is off unless `DEMO_MODE=True` is set on
-`medidesk-api`. Then:
+`render.yaml` turns demo mode on: `DEMO_MODE=True` on `medidesk-api` lets `seed_demo`
+run, and `VITE_DEMO_MODE=true` on `medidesk-web` puts a one-click sign-in button for each
+role on the login page. After the first deploy:
 
 ```bash
 cd hms && python manage.py seed_demo
 ```
 
-This creates the demo accounts described in the README. Set `VITE_DEMO_MODE=true` on
-`medidesk-web` and redeploy it to show the one-click demo logins.
+This creates the demo accounts described in the README, about 45 medicines with prices and
+stock, 24 lab tests, and a few weeks of visits with prescriptions, results and bills.
 
 Skip all of this for a real deployment. Every seeded account, the admin included,
 shares one publicly documented password, and `seed_demo --flush` deletes every
@@ -86,6 +87,30 @@ All optional, all on `medidesk-api`.
 | `ADMIN_URL` | `admin/` | Path of the Django admin. Moving it keeps it away from automated scanners. |
 | `API_DOCS_PUBLIC` | `False` | Swagger UI and the schema are open only to staff signed in to the Django admin. `True` opens them to everyone. |
 | `DEMO_MODE` | `False` | Lets `seed_demo` run with `DEBUG` off. |
+| `LOGIN_ADDRESS_FAILURES` | `20` | Wrong passwords from one address, across all usernames, before that address is refused for `LOGIN_LOCKOUT_SECONDS`. Successful sign-ins never count, so staff sharing one public address are not locked out. |
+
+## 5. Production settings
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EMAIL_URL` | print to log | SMTP server for password-reset emails, e.g. `smtp+tls://user:password@smtp.example.com:587`. Without it, "Forgot your password?" emails only appear in the service log. |
+| `DEFAULT_FROM_EMAIL` | `MediDesk <no-reply@medidesk.local>` | Sender of those emails. Use an address your SMTP provider lets you send from. |
+| `SENTRY_DSN` | unset | Sends unhandled errors to Sentry. Personal data is not sent. `SENTRY_ENVIRONMENT` and `SENTRY_TRACES_SAMPLE_RATE` tune it. |
+| `LOG_LEVEL` | `INFO` | Logs go to stdout, where Render shows them. |
+| `MEDIA_ROOT` | `hms/media` | Folder for uploaded medical documents. On Render, attach a persistent disk (paid plans) and set this to its mount path, e.g. `/var/data/media`. The default folder is wiped on every deploy. |
+| `CONN_MAX_AGE` | `60` | Seconds each worker keeps its database connection open. |
+
+`/healthz/` answers whether the process is up and is what Render polls. `/readyz/` also
+checks the database (503 if it cannot reach it); point an uptime monitor at it.
+
+### Before real patient data goes in
+
+1. Upgrade the database off the free plan and turn on daily backups. Free Render
+   databases are deleted after 90 days.
+2. Attach a persistent disk and set `MEDIA_ROOT`, or uploaded records are lost on deploy.
+3. Set `EMAIL_URL` so people can reset their own passwords.
+4. Remove `DEMO_MODE` and `VITE_DEMO_MODE`, and do not run `seed_demo`.
+5. Set `SENTRY_DSN`, or check the Render log regularly.
 
 ## What the build does
 

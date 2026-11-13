@@ -26,6 +26,7 @@ from .models import (
     Doctor,
     DoctorSchedule,
     DocumentShare,
+    LabTest,
     MedicalDocument,
     MedicationSchedule,
     Medicine,
@@ -33,13 +34,14 @@ from .models import (
     Patient,
     Payment,
     Prescription,
+    TestOrder,
     User,
 )
 
 AUDITED_MODELS = [
     Appointment, Bill, BillItem, BloodRequest, CareContact, Department, Doctor,
-    DoctorSchedule, DocumentShare, MedicalDocument, MedicationSchedule, Medicine,
-    MedicineStock, Patient, Payment, Prescription, User,
+    DoctorSchedule, DocumentShare, LabTest, MedicalDocument, MedicationSchedule, Medicine,
+    MedicineStock, Patient, Payment, Prescription, TestOrder, User,
 ]
 
 # Saves that carry no information worth a row: Django stamps last_login on every sign-in.

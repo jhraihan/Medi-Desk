@@ -3,14 +3,15 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { Activity, CalendarDays, HeartPulse, ShieldCheck } from "lucide-react";
 import { fetchMe, login } from "../api.js";
 import { useAuth } from "../auth-context.js";
+import { canVisit } from "../navigation.js";
 import { Alert, Button, Input, Mascot } from "../components/index.js";
 
 const DEMO_ACCOUNTS = [
   { username: "hospital_admin", label: "Admin", hint: "Everything" },
-  { username: "aisha", label: "Doctor", hint: "Clinic & prescribing" },
-  { username: "reception", label: "Receptionist", hint: "Front desk" },
+  { username: "aisha", label: "Doctor", hint: "Prescribe, order tests, print" },
+  { username: "reception", label: "Receptionist", hint: "Front desk, bills, lab results" },
   { username: "pharmacy", label: "Pharmacist", hint: "Dispensing & stock" },
-  { username: "rafi", label: "Patient", hint: "Queue, records, reminders" },
+  { username: "rafi", label: "Patient", hint: "Visits, results, bills" },
 ];
 
 const DEMO_PASSWORD = "Demo!2345";
@@ -31,7 +32,13 @@ export default function Login() {
   const { user, setUser } = useAuth();
   // Register hands over the new username; a protected page sends where to return to.
   const justRegistered = location.state?.registered;
-  const returnTo = location.state?.from?.pathname ?? "/dashboard";
+  const justReset = location.state?.passwordReset;
+  const from = location.state?.from;
+  // Go back to the page that asked for a sign-in, but only if the person now signing
+  // in may open it. After one role signs out on a page, the next role to sign in on
+  // the same screen would otherwise land on a page that isn't theirs.
+  const returnFor = (role) =>
+    from?.pathname && canVisit(role, from.pathname) ? `${from.pathname}${from.search ?? ""}` : "/dashboard";
 
   const [username, setUsername] = useState(location.state?.username ?? "");
   const [password, setPassword] = useState("");
@@ -46,8 +53,9 @@ export default function Login() {
       const data = await login(name, secret);
       localStorage.setItem("access_token", data.access);
       localStorage.setItem("refresh_token", data.refresh);
-      setUser(await fetchMe());
-      navigate(returnTo, { replace: true });
+      const me = await fetchMe();
+      setUser(me);
+      navigate(returnFor(me.role), { replace: true });
     } catch (problem) {
       setError(problem.response?.data?.detail || "Invalid username or password.");
     } finally {
@@ -60,7 +68,7 @@ export default function Login() {
     signIn(username.trim(), password);
   }
 
-  if (user) return <Navigate to={returnTo} replace />;
+  if (user) return <Navigate to={returnFor(user.role)} replace />;
 
   return (
     <div className="flex min-h-screen items-center justify-center p-4">
@@ -110,6 +118,9 @@ export default function Login() {
           {justRegistered && !error && (
             <Alert variant="success">Your account is ready. Sign in with your new password.</Alert>
           )}
+          {justReset && !error && (
+            <Alert variant="success">Password changed. Sign in with your new password.</Alert>
+          )}
           <Alert>{error}</Alert>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -135,6 +146,11 @@ export default function Login() {
             <Button type="submit" busy={isLoggingIn} className="w-full">
               {isLoggingIn ? "Signing in…" : "Log in"}
             </Button>
+            <p className="text-right text-sm">
+              <Link to="/forgot-password" className="font-medium text-brand-700 hover:underline">
+                Forgot your password?
+              </Link>
+            </p>
           </form>
 
           {DEMO_MODE && (

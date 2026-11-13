@@ -11,12 +11,18 @@ import Reminders from "./pages/Reminders";
 import Queue from "./pages/Queue";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import Appointments from "./pages/Appointments";
 import Prescriptions from "./pages/Prescriptions";
 import Doctors from "./pages/Doctors";
 import Patients from "./pages/Patients";
 import Medicines from "./pages/Medicines";
 import Billing from "./pages/Billing";
+import LabTests from "./pages/LabTests";
+import PrintBill from "./pages/print/PrintBill";
+import PrintLabReport from "./pages/print/PrintLabReport";
+import PrintPrescription from "./pages/print/PrintPrescription";
 import AdminLayout from "./pages/admin/AdminLayout";
 import AdminOverview from "./pages/admin/Overview";
 import AdminUsers from "./pages/admin/Users";
@@ -24,6 +30,7 @@ import AdminDepartments from "./pages/admin/Departments";
 import AdminSchedules from "./pages/admin/Schedules";
 import AdminStock from "./pages/admin/Stock";
 import AdminAuditLog from "./pages/admin/AuditLog";
+import AdminLabTests from "./pages/admin/LabTestCatalog";
 
 const STAFF = ["admin", "receptionist"];
 const CLINICAL = ["admin", "doctor"];
@@ -56,8 +63,15 @@ function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
             <Route element={<ProtectedRoute />}>
+              {/* Printable documents: a plain sheet, no sidebar. Each API scopes what it returns. */}
+              <Route path="/print/prescription/:id" element={<PrintPrescription />} />
+              <Route path="/print/bill/:id" element={<PrintBill />} />
+              <Route path="/print/lab/:id" element={<PrintLabReport />} />
+
               <Route element={<Layout />}>
                 <Route element={<RoleRoute allow={["admin", "receptionist", "doctor", "patient"]} />}>
                   <Route path="/appointments" element={<Appointments />} />
@@ -75,8 +89,12 @@ function App() {
                   <Route path="/medicines" element={<Medicines />} />
                 </Route>
 
-                <Route element={<RoleRoute allow={[...STAFF, "patient"]} />}>
+                <Route element={<RoleRoute allow={[...STAFF, "patient", "doctor"]} />}>
                   <Route path="/billing" element={<Billing />} />
+                </Route>
+
+                <Route element={<RoleRoute allow={[...STAFF, "doctor", "patient"]} />}>
+                  <Route path="/lab-tests" element={<LabTests />} />
                 </Route>
 
                 <Route path="/dashboard" element={<Dashboard />} />
@@ -103,6 +121,7 @@ function App() {
                     <Route path="departments" element={<AdminDepartments />} />
                     <Route path="schedules" element={<AdminSchedules />} />
                     <Route path="stock" element={<AdminStock />} />
+                    <Route path="lab-tests" element={<AdminLabTests />} />
                     <Route path="audit" element={<AdminAuditLog />} />
                   </Route>
                 </Route>

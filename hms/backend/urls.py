@@ -5,12 +5,14 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
+from .account_api import PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView
 from .admin_api import AdminOverviewView, AdminUserViewSet, AuditLogViewSet
 from .views import (
     AppointmentViewSet,
     BillViewSet,
     BloodRequestViewSet,
     CareContactViewSet,
+    ClinicView,
     DashboardView,
     DepartmentViewSet,
     DoctorQueueView,
@@ -18,6 +20,7 @@ from .views import (
     DoctorViewSet,
     DocumentShareViewSet,
     DonorViewSet,
+    LabTestViewSet,
     LoginView,
     MedicalDocumentViewSet,
     MedicationDoseViewSet,
@@ -30,6 +33,7 @@ from .views import (
     PatientViewSet,
     PrescriptionViewSet,
     RegisterView,
+    TestOrderViewSet,
 )
 
 router = DefaultRouter()
@@ -42,6 +46,8 @@ router.register(r'prescriptions', PrescriptionViewSet)
 router.register(r'medicines', MedicineViewSet)
 router.register(r'medicine-stock', MedicineStockViewSet)
 router.register(r'bills', BillViewSet)
+router.register(r'lab-tests', LabTestViewSet)
+router.register(r'test-orders', TestOrderViewSet)
 router.register(r'notifications', NotificationViewSet, basename='notification')
 router.register(r'documents', MedicalDocumentViewSet)
 router.register(r'donors', DonorViewSet, basename='donor')
@@ -59,6 +65,10 @@ urlpatterns = [
     path('logout/', TokenBlacklistView.as_view(), name='logout'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/me/', MeView.as_view(), name='me'),
+    path('clinic/', ClinicView.as_view(), name='clinic'),
+    path('auth/password/', PasswordChangeView.as_view(), name='password-change'),
+    path('auth/password-reset/', PasswordResetRequestView.as_view(), name='password-reset'),
+    path('auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path('admin/overview/', AdminOverviewView.as_view(), name='admin-overview'),
     path('queue/me/', MyQueueView.as_view(), name='my-queue'),

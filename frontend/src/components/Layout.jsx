@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Activity, LogOut, Menu } from "lucide-react";
+import { Activity, KeyRound, LogOut, Menu } from "lucide-react";
 import { useAuth } from "../auth-context.js";
 import { fullName } from "../format.js";
 import { isActive, NAV } from "../navigation.js";
+import ChangePasswordModal from "./ChangePasswordModal.jsx";
 import Modal from "./Modal.jsx";
 
 // The phone tab bar fits four pages; the rest, and signing out, live under "More".
@@ -17,6 +18,7 @@ export default function Layout() {
   const { user, signOut } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
 
   async function handleLogout() {
     setSigningOut(true);
@@ -84,6 +86,13 @@ export default function Layout() {
                 <p className="text-xs capitalize text-ink-500">{user?.role}</p>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setPasswordOpen(true)}
+              className={`mb-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-ink-700 transition-colors duration-200 hover:bg-white/70 ${focusRing}`}
+            >
+              <KeyRound size={16} /> Change password
+            </button>
             <button
               type="button"
               onClick={handleLogout}
@@ -182,13 +191,25 @@ export default function Layout() {
 
         <button
           type="button"
+          onClick={() => {
+            setMenuOpen(false);
+            setPasswordOpen(true);
+          }}
+          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold text-ink-700 ring-1 ring-brand-100 hover:bg-brand-50 ${focusRing}`}
+        >
+          <KeyRound size={16} /> Change password
+        </button>
+        <button
+          type="button"
           onClick={handleLogout}
           disabled={signingOut}
-          className={`mt-4 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold text-rose-600 ring-1 ring-rose-100 hover:bg-rose-50 disabled:opacity-60 ${focusRing}`}
+          className={`mt-2 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold text-rose-600 ring-1 ring-rose-100 hover:bg-rose-50 disabled:opacity-60 ${focusRing}`}
         >
           <LogOut size={16} /> {signingOut ? "Signing out…" : "Log out"}
         </button>
       </Modal>
+
+      <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </div>
   );
 }

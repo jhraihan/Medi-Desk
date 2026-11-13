@@ -39,7 +39,7 @@ const TILES = {
   today_queue: { label: "In today's queue", icon: Clock, to: "/queue" },
   unconfirmed: { label: "Unconfirmed bookings", icon: ClipboardList, to: "/appointments?status=pending" },
   unpaid_invoices: { label: "Unpaid invoices", icon: Receipt, to: "/billing?status=unpaid" },
-  revenue_this_month: { label: "Revenue this month", icon: BadgeDollarSign, to: "/billing" },
+  revenue_this_month: { label: "Billed this month", icon: BadgeDollarSign, to: "/billing" },
   outstanding_invoices: { label: "Outstanding invoices", icon: Receipt, to: "/billing?status=unpaid" },
   active_doctors: { label: "Doctors available", icon: Stethoscope, to: "/doctors" },
   total_patients: { label: "Patients", icon: Users, to: "/patients" },

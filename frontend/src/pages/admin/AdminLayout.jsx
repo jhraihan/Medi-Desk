@@ -3,6 +3,7 @@ import {
   Boxes,
   Building2,
   CalendarClock,
+  FlaskConical,
   LayoutDashboard,
   ScrollText,
   UserCog,
@@ -15,6 +16,7 @@ const TABS = [
   { to: "/admin/departments", label: "Departments", icon: Building2 },
   { to: "/admin/schedules", label: "Doctor schedules", icon: CalendarClock },
   { to: "/admin/stock", label: "Pharmacy stock", icon: Boxes },
+  { to: "/admin/lab-tests", label: "Lab tests", icon: FlaskConical },
   { to: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
 

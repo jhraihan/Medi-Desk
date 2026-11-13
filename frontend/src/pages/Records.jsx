@@ -288,7 +288,8 @@ export default function Records() {
 function UploadModal({ onClose, onSaved }) {
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState("lab_report");
-  const [documentDate, setDocumentDate] = useState("");
+  // Most uploads are a report from today; still editable for older papers.
+  const [documentDate, setDocumentDate] = useState(() => localISODate());
   const [issuedBy, setIssuedBy] = useState("");
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState(null);

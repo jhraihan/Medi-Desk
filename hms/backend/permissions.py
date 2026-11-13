@@ -105,8 +105,24 @@ class ScheduleAccess(RolePermission):
 
 
 class BillAccess(RolePermission):
-    read_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.PATIENT)
+    # Doctors read the bills of their own visits (BillViewSet narrows them) to print them.
+    read_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.PATIENT, User.Role.DOCTOR)
     write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST)
+    delete_roles = (User.Role.ADMIN,)
+
+
+class LabTestAccess(RolePermission):
+    """The catalogue of tests and prices."""
+
+    read_roles = (User.Role.ADMIN, User.Role.DOCTOR, User.Role.RECEPTIONIST)
+    write_roles = (User.Role.ADMIN,)
+
+
+class TestOrderAccess(RolePermission):
+    """Doctors order tests; the front desk records results; patients read their own."""
+
+    read_roles = (User.Role.ADMIN, User.Role.DOCTOR, User.Role.RECEPTIONIST, User.Role.PATIENT)
+    write_roles = (User.Role.ADMIN, User.Role.DOCTOR, User.Role.RECEPTIONIST)
     delete_roles = (User.Role.ADMIN,)
 
 

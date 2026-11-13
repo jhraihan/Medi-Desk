@@ -205,3 +205,69 @@ body::before {
     transition: none;
   }
 }
+
+/* Tables on phones: each row becomes a card and each cell is labelled with its
+   column (data-label, set by components/Table.jsx), so nothing hides off-screen in
+   a sideways scroll. Plain CSS sits outside Tailwind's layers, so it overrides the
+   padding utilities on the cells. */
+@media (max-width: 639px) {
+  .table-stack thead {
+    display: none;
+  }
+  .table-stack,
+  .table-stack tbody,
+  .table-stack tr,
+  .table-stack td {
+    display: block;
+    width: 100%;
+  }
+  .table-stack tr {
+    padding: 0.75rem 1rem;
+  }
+  .table-stack td {
+    padding: 0.3rem 0;
+    white-space: normal;
+  }
+  .table-stack td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.1rem;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-ink-500);
+  }
+  .table-stack td > div:has(> button) {
+    justify-content: flex-start;
+  }
+}
+
+/* Printed prescriptions, invoices and lab reports: plain white A4, no app chrome. */
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body::before,
+  body::after {
+    display: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    max-width: none !important;
+  }
+  .print-avoid-break {
+    break-inside: avoid;
+  }
+}

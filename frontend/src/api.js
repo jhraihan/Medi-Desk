@@ -87,6 +87,27 @@ export async function fetchMe() {
   return response.data;
 }
 
+// Signs every other session out; the fresh pair returned keeps this browser signed in.
+export async function changePassword(currentPassword, newPassword) {
+  const response = await API.post("auth/password/", {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+  localStorage.setItem("access_token", response.data.access);
+  localStorage.setItem("refresh_token", response.data.refresh);
+  return response.data;
+}
+
+export async function requestPasswordReset(email) {
+  const response = await API.post("auth/password-reset/", { email });
+  return response.data;
+}
+
+export async function confirmPasswordReset(uid, token, newPassword) {
+  const response = await API.post("auth/password-reset/confirm/", { uid, token, new_password: newPassword });
+  return response.data;
+}
+
 export async function logout() {
   const refresh = localStorage.getItem("refresh_token");
   if (refresh) {
@@ -328,6 +349,36 @@ export const prescriptionsApi = createCrudApi("prescriptions");
 export const medicinesApi = createCrudApi("medicines");
 export const billsApi = createCrudApi("bills");
 export const medicineStockApi = createCrudApi("medicine-stock");
+export const labTestsApi = createCrudApi("lab-tests");
+export const testOrdersApi = createCrudApi("test-orders");
+
+export async function addBillItem(billId, item) {
+  const response = await API.post(`bills/${billId}/add-item/`, item);
+  return response.data;
+}
+
+export async function removeBillItem(billId, itemId) {
+  const response = await API.post(`bills/${billId}/remove-item/${itemId}/`);
+  return response.data;
+}
+
+// Name and contact details for printed letterheads. Public, and fetched once.
+let clinicDetails = null;
+export async function fetchClinic() {
+  if (!clinicDetails) clinicDetails = API.get("clinic/").then((response) => response.data);
+  try {
+    return await clinicDetails;
+  } catch (problem) {
+    clinicDetails = null;
+    throw problem;
+  }
+}
+
+// Printable pages open in their own tab. Opening synchronously inside the click keeps
+// popup blockers quiet; ?auto=1 brings up the print dialog once the page has loaded.
+export function openPrintable(path) {
+  window.open(`${path}?auto=1`, "_blank");
+}
 export const doctorSchedulesApi = createCrudApi("doctor-schedules");
 
 // Admin section. Every endpoint below answers 403 for any role but admin.

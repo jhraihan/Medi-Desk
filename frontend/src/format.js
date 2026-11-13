@@ -1,7 +1,8 @@
 // One place for how money, dates and names read across the app, so every page agrees.
 
+// Always two decimals, so ৳4,042.50 never reads as ৳4,042.5.
 export function money(value) {
-  return `৳${Number(value ?? 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  return `৳${Number(value ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // "2025-03-01" parsed by Date is midnight UTC, which is the day before anywhere west

@@ -1,4 +1,4 @@
-import { appointmentsApi, medicinesApi, patientsApi } from "./api.js";
+import { appointmentsApi, labTestsApi, medicinesApi, patientsApi } from "./api.js";
 import { formatDateTime, fullName } from "./format.js";
 
 // Search functions for SearchPicker. They live at module level so their identity
@@ -26,8 +26,26 @@ export async function searchMedicines(text) {
   return rows.map((medicine) => ({
     value: medicine.id,
     label: medicine.name,
-    hint: [medicine.generic_name, medicine.unit].filter(Boolean).join(" · "),
+    hint: [medicine.generic_name, `৳${medicine.unit_price} per ${medicine.unit}`].filter(Boolean).join(" · "),
+    price: medicine.unit_price,
+    unit: medicine.unit,
   }));
+}
+
+export async function searchLabTests(text) {
+  const rows = await labTestsApi.list({ is_active: true, ...(text && { search: text }) });
+  return rows.map((test) => ({
+    value: test.id,
+    label: test.name,
+    hint: `${test.category_display} · ৳${test.price}`,
+    price: test.price,
+  }));
+}
+
+// Any visit that was not cancelled, for ordering a test outside a prescription.
+export async function searchOpenAppointments(text) {
+  const rows = await appointmentsApi.list({ ordering: "-appointment_date", ...(text && { search: text }) });
+  return rows.filter((appointment) => appointment.status !== "cancelled").map(appointmentOption);
 }
 
 export function appointmentOption(appointment) {

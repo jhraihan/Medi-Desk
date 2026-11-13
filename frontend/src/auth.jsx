@@ -6,6 +6,9 @@ import { EmptyState, Loading } from "./components/index.js";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  // True once someone signs out on purpose, so the login page starts fresh instead of
+  // offering to return to the page they were on (that is for expired sessions).
+  const [signedOut, setSignedOut] = useState(false);
   // No stored token means there is nobody to look up, so skip the loading state.
   const [loading, setLoading] = useState(() => Boolean(localStorage.getItem("access_token")));
 
@@ -25,18 +28,24 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     await apiLogout();
+    setSignedOut(true);
     setUser(null);
   }
 
+  function signIn(me) {
+    setSignedOut(false);
+    setUser(me);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, signOut }}>
+    <AuthContext.Provider value={{ user, setUser: signIn, loading, signOut, signedOut }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function ProtectedRoute() {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOut } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -46,7 +55,7 @@ export function ProtectedRoute() {
       </div>
     );
   }
-  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (!user) return <Navigate to="/login" state={signedOut ? undefined : { from: location }} replace />;
   return <Outlet />;
 }
 
