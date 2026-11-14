@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
 import { fetchMe, logout as apiLogout } from "./api.js";
 import { AuthContext, useAuth } from "./auth-context.js";
+import { EmptyState, Loading } from "./components/index.js";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
+  // True once someone signs out on purpose, so the login page starts fresh instead of
+  // offering to return to the page they were on (that is for expired sessions).
+  const [signedOut, setSignedOut] = useState(false);
   // No stored token means there is nobody to look up, so skip the loading state.
   const [loading, setLoading] = useState(() => Boolean(localStorage.getItem("access_token")));
 
@@ -24,22 +28,34 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     await apiLogout();
+    setSignedOut(true);
     setUser(null);
   }
 
+  function signIn(me) {
+    setSignedOut(false);
+    setUser(me);
+  }
+
   return (
-    <AuthContext.Provider value={{ user, setUser, loading, signOut }}>
+    <AuthContext.Provider value={{ user, setUser: signIn, loading, signOut, signedOut }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function ProtectedRoute() {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOut } = useAuth();
   const location = useLocation();
 
-  if (loading) return <div className="p-8 text-slate-500">Loading…</div>;
-  if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Loading message="Signing you in…" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/login" state={signedOut ? undefined : { from: location }} replace />;
   return <Outlet />;
 }
 
@@ -49,12 +65,19 @@ export function RoleRoute({ allow }) {
   if (!user) return <Navigate to="/login" replace />;
   if (!allow.includes(user.role)) {
     return (
-      <div className="p-8">
-        <h1 className="text-lg font-semibold text-slate-800">Not available</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Your role doesn&apos;t have access to this page.
-        </p>
-      </div>
+      <EmptyState
+        mood="alert"
+        title="This page isn't part of your role"
+        message={`Signed in as ${user.role}. Ask an administrator if you need access.`}
+        action={
+          <Link
+            to="/dashboard"
+            className="rounded-xl bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700"
+          >
+            Back to dashboard
+          </Link>
+        }
+      />
     );
   }
   return <Outlet />;

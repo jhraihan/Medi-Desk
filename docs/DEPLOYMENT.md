@@ -31,6 +31,11 @@ differ:
   static site's full origin, scheme included (`https://…`).
 - On `medidesk-web`: `VITE_API_URL` → the API's URL with the path appended:
   `https://<api-host>/api/v1/`
+- On `medidesk-web`: the `Content-Security-Policy` header in `render.yaml` names
+  the API origin in `connect-src`. If the API host differs, change it there too,
+  or the browser blocks every API call.
+- On `medidesk-api`: `FRONTEND_URL` → the static site's origin. The Django admin's
+  "View site" link points there.
 
 The trailing slash on `VITE_API_URL` is required. `frontend/src/api.js` issues
 relative paths such as `login/`, and axios discards the final segment of a
@@ -48,17 +53,64 @@ The build runs `migrate` but cannot create an interactive user. Open
 cd hms && python manage.py createsuperuser
 ```
 
-The admin is then at `https://<api-host>/admin/`.
+The Django admin is then at `https://<api-host>/admin/` (or at `ADMIN_URL`, below).
+Sign in to the React app with the same account and the **Admin** section appears in
+the sidebar. Create every other staff account from there.
 
 ### Optional: demo data
+
+`render.yaml` turns demo mode on: `DEMO_MODE=True` on `medidesk-api` lets `seed_demo`
+run, and `VITE_DEMO_MODE=true` on `medidesk-web` puts a one-click sign-in button for each
+role on the login page. After the first deploy:
 
 ```bash
 cd hms && python manage.py seed_demo
 ```
 
-This creates the demo accounts described in the README. Skip it for a real
-deployment — it inserts fictional patients and a shared, publicly documented
-password.
+This creates the demo accounts described in the README, about 45 medicines with prices and
+stock, 24 lab tests, and a few weeks of visits with prescriptions, results and bills.
+
+Skip all of this for a real deployment. Every seeded account, the admin included,
+shares one publicly documented password, and `seed_demo --flush` deletes every
+account that is not a superuser.
+
+## 4. Security settings
+
+All optional, all on `medidesk-api`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CACHE_URL` | `locmemcache://` | Where sign-in lockout counts and rate-limit buckets live. `render.yaml` sets `dbcache://hms_cache` so all gunicorn workers share one count. With the default, each worker counts separately. |
+| `LOGIN_LOCKOUT_ATTEMPTS` | `5` | Failed passwords before an account is locked. Applies to the API and the Django admin. |
+| `LOGIN_LOCKOUT_SECONDS` | `900` | How long the lock lasts after the last failure. An admin can clear it early from **Admin → Users & roles**. |
+| `NUM_PROXIES` | unset | Proxy hops in front of the app. Rate limits and the audit log count back this many entries in `X-Forwarded-For` to find the client. Unset, the whole header is used, so a client can add fake entries to avoid per-address limits. Confirm Render's hop count before you set it: a value too low makes every visitor share one rate-limit bucket. |
+| `ADMIN_URL` | `admin/` | Path of the Django admin. Moving it keeps it away from automated scanners. |
+| `API_DOCS_PUBLIC` | `False` | Swagger UI and the schema are open only to staff signed in to the Django admin. `True` opens them to everyone. |
+| `DEMO_MODE` | `False` | Lets `seed_demo` run with `DEBUG` off. |
+| `LOGIN_ADDRESS_FAILURES` | `20` | Wrong passwords from one address, across all usernames, before that address is refused for `LOGIN_LOCKOUT_SECONDS`. Successful sign-ins never count, so staff sharing one public address are not locked out. |
+
+## 5. Production settings
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EMAIL_URL` | print to log | SMTP server for password-reset emails, e.g. `smtp+tls://user:password@smtp.example.com:587`. Without it, "Forgot your password?" emails only appear in the service log. |
+| `DEFAULT_FROM_EMAIL` | `MediDesk <no-reply@medidesk.local>` | Sender of those emails. Use an address your SMTP provider lets you send from. |
+| `SENTRY_DSN` | unset | Sends unhandled errors to Sentry. Personal data is not sent. `SENTRY_ENVIRONMENT` and `SENTRY_TRACES_SAMPLE_RATE` tune it. |
+| `LOG_LEVEL` | `INFO` | Logs go to stdout, where Render shows them. |
+| `MEDIA_ROOT` | `hms/media` | Folder for uploaded medical documents. On Render, attach a persistent disk (paid plans) and set this to its mount path, e.g. `/var/data/media`. The default folder is wiped on every deploy. |
+| `CONN_MAX_AGE` | `60` | Seconds each worker keeps its database connection open. |
+
+`/healthz/` answers whether the process is up and is what Render polls. `/readyz/` also
+checks the database (503 if it cannot reach it); point an uptime monitor at it.
+
+### Before real patient data goes in
+
+1. Upgrade the database off the free plan and turn on daily backups. Free Render
+   databases are deleted after 90 days.
+2. Attach a persistent disk and set `MEDIA_ROOT`, or uploaded records are lost on deploy.
+3. Set `EMAIL_URL` so people can reset their own passwords.
+4. Remove `DEMO_MODE` and `VITE_DEMO_MODE`, and do not run `seed_demo`.
+5. Set `SENTRY_DSN`, or check the Render log regularly.
 
 ## What the build does
 
@@ -68,6 +120,8 @@ password.
 2. `collectstatic` — writes `hms/staticfiles/`, which WhiteNoise serves for the
    admin and Swagger UI. There is no separate web server for static files.
 3. `migrate`
+4. `createcachetable` — the table behind `CACHE_URL=dbcache://hms_cache`. It does
+   nothing with other cache backends.
 
 Gunicorn then starts with 2 workers, bound to Render's `$PORT`.
 
@@ -98,7 +152,8 @@ pre-existing property of the code, not something the Render setup introduced.
 
 ## Local development
 
-Unchanged. Copy `hms/.env.example` to `hms/.env`, then:
+Copy `hms/.env.example` to `hms/.env` and point `DATABASE_URL` at a local PostgreSQL
+database (the README shows how to create one), then:
 
 ```bash
 cd hms
@@ -106,8 +161,8 @@ python manage.py migrate
 python manage.py runserver
 ```
 
-Omitting `DATABASE_URL` falls back to the local SQLite file. `docker-compose.yml`
-still runs the full stack with Postgres and Redis.
+There is no SQLite fallback: development, CI and Render all run PostgreSQL.
+`docker-compose.yml` runs the full stack with its own Postgres container.
 
 ## Troubleshooting
 
@@ -120,3 +175,6 @@ still runs the full stack with Postgres and Redis.
 | Admin renders unstyled | `collectstatic` failed during the build; check the build log. |
 | Redirect loop | `SECURE_PROXY_SSL_HEADER` is required so Django sees Render's forwarded HTTPS. It is set in `settings.py`. |
 | First request hangs ~50s | Free-tier cold start, as above. |
+| Every API call fails; the console reports a Content-Security-Policy violation | `connect-src` in the static site's CSP header does not name the API origin. |
+| "Too many failed sign-in attempts" | The account is locked for `LOGIN_LOCKOUT_SECONDS`. Clear it from **Admin → Users & roles**, or with the Django admin action "Clear failed sign-in lockout". |
+| `/api/docs/` returns 403 | Sign in to the Django admin first, or set `API_DOCS_PUBLIC=True`. |

@@ -7,5 +7,5 @@ const tones = {
 };
 
 export default function Badge({ tone = "neutral", children }) {
-  return <span className={`pill ${tones[tone]}`}>{children}</span>;
+  return <span className={`pill ${tones[tone] ?? tones.neutral}`}>{children}</span>;
 }

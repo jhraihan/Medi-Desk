@@ -1,35 +1,58 @@
+import secrets
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from django.utils import timezone
+from django.utils.text import slugify
 from rest_framework import serializers
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
 from .models import (
     Appointment,
+    AuditLog,
     Bill,
     BillItem,
     BloodRequest,
     CareContact,
     Department,
     Doctor,
+    DoctorSchedule,
     DocumentAccessLog,
     DocumentShare,
     DonationRecord,
     Donor,
     DonorResponse,
+    LabTest,
     MedicalDocument,
     MedicationDose,
     MedicationSchedule,
     Medicine,
+    MedicineStock,
     Notification,
     Patient,
     Payment,
     Prescription,
     PrescriptionMedicine,
+    TestOrder,
     User,
 )
+from .permissions import role_of
+from .security import is_locked_out, lockout_message
+from .services import recompute_bill
+
+
+class LoginSerializer(TokenObtainPairSerializer):
+    """Says why a locked account is refused instead of the generic bad-password reply."""
+
+    def validate(self, attrs):
+        if is_locked_out(attrs.get(self.username_field)):
+            raise AuthenticationFailed(lockout_message(), code='locked_out')
+        return super().validate(attrs)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -40,7 +63,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
-    """Signup always creates a patient. Staff are added through the Django admin."""
+    """Signup always creates a patient. Staff are added through the admin panels."""
 
     class Meta:
         model = User
@@ -64,6 +87,15 @@ class RegisterSerializer(serializers.ModelSerializer):
             role=User.Role.PATIENT,
         )
 
+
+def unique_username(first_name, last_name=''):
+    base = slugify(f'{first_name} {last_name}')[:30] or 'patient'
+    candidate = base
+    while User.objects.filter(username=candidate).exists():
+        candidate = f'{base}-{secrets.randbelow(9000) + 1000}'
+    return candidate
+
+
 class DepartmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Department
@@ -81,9 +113,24 @@ class DoctorSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['average_consult_minutes']
 
+    def validate_user(self, user):
+        if self.instance is not None and user != self.instance.user:
+            raise serializers.ValidationError('A doctor profile cannot be moved to another account.')
+        if user.role != User.Role.DOCTOR:
+            raise serializers.ValidationError('Pick an account that has the doctor role.')
+        return user
+
 class PatientSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     age = serializers.IntegerField(read_only=True)
+
+    # The front desk registering a walk-in creates the sign-in account from these.
+    # A patient filling in their own profile reuses the account they signed up with.
+    first_name = serializers.CharField(write_only=True, required=False, max_length=150)
+    last_name = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=150)
+    email = serializers.EmailField(write_only=True, required=False, allow_blank=True)
+
+    ACCOUNT_FIELDS = ('first_name', 'last_name', 'email')
 
     class Meta:
         model = Patient
@@ -92,21 +139,65 @@ class PatientSerializer(serializers.ModelSerializer):
             'gender', 'blood_group', 'address', 'phone',
             'emergency_contact_name', 'emergency_contact_phone',
             'allergies', 'chronic_conditions',
+            'first_name', 'last_name', 'email',
         ]
-        read_only_fields = ['medical_record_number']
+        # Writable, this let a patient attach a profile to someone else's account.
+        read_only_fields = ['medical_record_number', 'user']
+
+    def _pop_account(self, validated_data):
+        return {name: validated_data.pop(name) for name in self.ACCOUNT_FIELDS if name in validated_data}
+
+    @transaction.atomic
+    def create(self, validated_data):
+        account = self._pop_account(validated_data)
+        if 'user' not in validated_data:
+            if not account.get('first_name'):
+                raise serializers.ValidationError({'first_name': "Enter the patient's first name."})
+            validated_data['user'] = User.objects.create_user(
+                username=unique_username(account['first_name'], account.get('last_name', '')),
+                password=None,
+                role=User.Role.PATIENT,
+                **account,
+            )
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        account = self._pop_account(validated_data)
+        if account:
+            for name, value in account.items():
+                setattr(instance.user, name, value)
+            instance.user.save(update_fields=list(account))
+        return super().update(instance, validated_data)
 
 class AppointmentSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source='patient.__str__', read_only=True)
     doctor_name = serializers.CharField(source='doctor.__str__', read_only=True)
+    has_prescription = serializers.SerializerMethodField()
+
+    # Status changes a booking accepts directly, keyed by the new status, listing the
+    # statuses it may come from. Checked-in, in-consultation and completed carry
+    # timestamps, so they only come from the check-in, start and complete actions.
+    DESK_TRANSITIONS = {
+        'pending': {'approved'},
+        'approved': {'pending'},
+        'cancelled': {'pending', 'approved', 'checked_in'},
+    }
+    PATIENT_EDITABLE = {'status', 'reason', 'cancelled_reason'}
 
     class Meta:
         model = Appointment
         fields = '__all__'
         read_only_fields = ['created_at', 'checked_in_at', 'started_at', 'completed_at']
+        # validate() fills the patient in for a patient booking for themselves.
+        extra_kwargs = {'patient': {'required': False}}
         # The model constraint drives DRF to add a unique-together validator whose
         # message is generic and lands on non_field_errors. validate() below reports
         # the clash against the date field instead, which is what the UI needs.
         validators = []
+
+    def get_has_prescription(self, obj) -> bool:
+        # The view selects the prescription alongside, so this costs no extra query.
+        return hasattr(obj, 'prescription')
 
     def validate_appointment_date(self, when):
         if when < timezone.now():
@@ -114,13 +205,29 @@ class AppointmentSerializer(serializers.ModelSerializer):
         return when
 
     def validate(self, attrs):
+        user = self.context['request'].user
+        role = role_of(user)
+
+        if role == User.Role.PATIENT:
+            self._limit_to_own_patient(attrs, user)
+        elif role == User.Role.DOCTOR:
+            self._limit_to_own_doctor(attrs, user)
+
+        if self.instance is None and not attrs.get('patient'):
+            raise serializers.ValidationError({'patient': 'This field is required.'})
+
+        self._check_status(attrs)
+
         doctor = attrs.get('doctor') or getattr(self.instance, 'doctor', None)
         when = attrs.get('appointment_date') or getattr(self.instance, 'appointment_date', None)
+        rebooking = self.instance is None or {'doctor', 'appointment_date'} & attrs.keys()
 
-        if doctor and not doctor.is_available:
+        # Only a new or moved booking needs a free, available doctor. Checking on every
+        # edit meant nobody could cancel a visit with a doctor who had since gone away.
+        if rebooking and doctor and not doctor.is_available:
             raise serializers.ValidationError({'doctor': 'This doctor is not accepting appointments.'})
 
-        if doctor and when:
+        if rebooking and doctor and when:
             clash = Appointment.objects.filter(
                 doctor=doctor, appointment_date=when
             ).exclude(status='cancelled')
@@ -133,24 +240,264 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
         return attrs
 
+    def _limit_to_own_patient(self, attrs, user):
+        own = getattr(user, 'patient', None)
+        if own is None:
+            raise serializers.ValidationError('Complete your patient profile before booking.')
+
+        if self.instance is None:
+            if attrs.get('patient', own) != own:
+                raise serializers.ValidationError(
+                    {'patient': 'You can only book appointments for yourself.'})
+            attrs['patient'] = own
+            # Approval and the meeting link stay with the clinic.
+            attrs['status'] = 'pending'
+            attrs.pop('meeting_link', None)
+            return
+
+        blocked = sorted(set(attrs) - self.PATIENT_EDITABLE)
+        if blocked:
+            raise serializers.ValidationError(
+                {field: 'Patients can only cancel a booking or update its reason.' for field in blocked})
+        if attrs.get('status', 'cancelled') != 'cancelled':
+            raise serializers.ValidationError({'status': 'Patients can only cancel a booking.'})
+
+    def _limit_to_own_doctor(self, attrs, user):
+        own = getattr(user, 'doctor', None)
+        doctor = attrs.get('doctor') or getattr(self.instance, 'doctor', None)
+        if own is None or doctor != own:
+            raise serializers.ValidationError({'doctor': 'You can only manage your own appointments.'})
+        if self.instance is not None and attrs.get('patient', self.instance.patient) != self.instance.patient:
+            raise serializers.ValidationError(
+                {'patient': 'Cancel this booking and make a new one for another patient.'})
+
+    def _check_status(self, attrs):
+        new = attrs.get('status')
+        if new is None:
+            return
+
+        if self.instance is None:
+            if new not in ('pending', 'approved'):
+                raise serializers.ValidationError({'status': 'A new booking starts as pending or approved.'})
+            return
+
+        current = self.instance.status
+        if new == current:
+            return
+        allowed_from = self.DESK_TRANSITIONS.get(new)
+        if allowed_from is None:
+            raise serializers.ValidationError(
+                {'status': 'Use check-in, start and complete to move a visit along.'})
+        if current not in allowed_from:
+            raise serializers.ValidationError(
+                {'status': f'A {self.instance.get_status_display().lower()} appointment cannot be set to {new}.'})
+
 class MedicineSerializer(serializers.ModelSerializer):
     class Meta:
         model = Medicine
         fields = '__all__'
 
+    def validate_unit_price(self, price):
+        if price < 0:
+            raise serializers.ValidationError('The price cannot be negative.')
+        return price
+
+
+class MedicineStockSerializer(serializers.ModelSerializer):
+    medicine_name = serializers.CharField(source='medicine.name', read_only=True)
+    is_expired = serializers.BooleanField(read_only=True)
+    needs_reorder = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = MedicineStock
+        fields = [
+            'id', 'medicine', 'medicine_name', 'batch_number', 'quantity', 'reorder_level',
+            'expiry_date', 'purchase_price', 'is_expired', 'needs_reorder',
+        ]
+
+    def validate_purchase_price(self, price):
+        if price < 0:
+            raise serializers.ValidationError('The price cannot be negative.')
+        return price
+
+
+class DoctorScheduleSerializer(serializers.ModelSerializer):
+    doctor_name = serializers.CharField(source='doctor.__str__', read_only=True)
+    weekday_display = serializers.CharField(source='get_weekday_display', read_only=True)
+
+    class Meta:
+        model = DoctorSchedule
+        fields = ['id', 'doctor', 'doctor_name', 'weekday', 'weekday_display', 'start_time', 'end_time']
+        # The overlap check in validate() covers the unique-together rule with a clearer message.
+        validators = []
+
+    def validate(self, attrs):
+        def current(name):
+            return attrs.get(name, getattr(self.instance, name, None))
+
+        doctor, weekday = current('doctor'), current('weekday')
+        start, end = current('start_time'), current('end_time')
+
+        if start and end and end <= start:
+            raise serializers.ValidationError({'end_time': 'The session must end after it starts.'})
+
+        overlapping = DoctorSchedule.objects.filter(
+            doctor=doctor, weekday=weekday, start_time__lt=end, end_time__gt=start)
+        if self.instance:
+            overlapping = overlapping.exclude(pk=self.instance.pk)
+        if overlapping.exists():
+            raise serializers.ValidationError(
+                {'start_time': 'This overlaps another session for the same doctor that day.'})
+        return attrs
+
 class PrescriptionMedicineSerializer(serializers.ModelSerializer):
+    medicine_name = serializers.CharField(source='medicine.name', read_only=True)
+    medicine_unit = serializers.CharField(source='medicine.unit', read_only=True)
+    generic_name = serializers.CharField(source='medicine.generic_name', read_only=True)
+    unit_price = serializers.DecimalField(source='medicine.unit_price', max_digits=10, decimal_places=2,
+                                          read_only=True)
+
     class Meta:
         model = PrescriptionMedicine
-        fields = ['medicine', 'dosage', 'duration', 'frequency', 'instructions', 'quantity']
+        fields = ['medicine', 'medicine_name', 'medicine_unit', 'generic_name', 'unit_price',
+                  'dosage', 'duration', 'frequency', 'instructions', 'quantity']
+
+    def validate_quantity(self, quantity):
+        if quantity < 1:
+            raise serializers.ValidationError('Prescribe at least one.')
+        return quantity
+
+
+class LabTestSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(source='get_category_display', read_only=True)
+
+    class Meta:
+        model = LabTest
+        fields = ['id', 'name', 'category', 'category_display', 'price', 'description', 'is_active']
+
+    def validate_price(self, price):
+        if price < 0:
+            raise serializers.ValidationError('The price cannot be negative.')
+        return price
+
+
+class TestOrderBriefSerializer(serializers.ModelSerializer):
+    """A test as it appears on a prescription."""
+
+    test_name = serializers.CharField(source='test.name', read_only=True)
+    price = serializers.DecimalField(source='test.price', max_digits=10, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = TestOrder
+        fields = ['id', 'test', 'test_name', 'price', 'instructions', 'status', 'result', 'result_flag',
+                  'completed_at']
+        read_only_fields = fields
+
+
+class TestRequestSerializer(serializers.Serializer):
+    test = serializers.PrimaryKeyRelatedField(queryset=LabTest.objects.filter(is_active=True))
+    instructions = serializers.CharField(max_length=255, required=False, allow_blank=True)
+
+
+class TestOrderSerializer(serializers.ModelSerializer):
+    test_name = serializers.CharField(source='test.name', read_only=True)
+    test_category = serializers.CharField(source='test.get_category_display', read_only=True)
+    price = serializers.DecimalField(source='test.price', max_digits=10, decimal_places=2, read_only=True)
+    patient = serializers.IntegerField(source='appointment.patient_id', read_only=True)
+    patient_name = serializers.CharField(source='appointment.patient.__str__', read_only=True)
+    patient_mrn = serializers.CharField(source='appointment.patient.medical_record_number', read_only=True)
+    patient_age = serializers.IntegerField(source='appointment.patient.age', read_only=True, allow_null=True)
+    patient_gender = serializers.CharField(source='appointment.patient.get_gender_display', read_only=True)
+    doctor_name = serializers.CharField(source='appointment.doctor.__str__', read_only=True)
+    visit_date = serializers.DateTimeField(source='appointment.appointment_date', read_only=True)
+    completed_by_name = serializers.SerializerMethodField()
+
+    RESULT_FIELDS = {'status', 'result', 'result_flag'}
+
+    class Meta:
+        model = TestOrder
+        fields = [
+            'id', 'appointment', 'test', 'test_name', 'test_category', 'price', 'patient', 'patient_name',
+            'patient_mrn', 'patient_age', 'patient_gender', 'doctor_name', 'visit_date', 'instructions',
+            'status', 'result', 'result_flag', 'completed_by_name', 'completed_at', 'ordered_at',
+        ]
+        read_only_fields = ['completed_at', 'ordered_at']
+
+    def get_completed_by_name(self, order) -> str | None:
+        user = order.completed_by
+        return (user.get_full_name() or user.username) if user else None
+
+    def validate(self, attrs):
+        if self.instance is None:
+            return self._validate_new(attrs)
+
+        blocked = sorted(set(attrs) - self.RESULT_FIELDS)
+        if blocked:
+            raise serializers.ValidationError(
+                {field: 'Only the status and result of an ordered test can change.' for field in blocked})
+        if self.instance.status == TestOrder.Status.CANCELLED:
+            raise serializers.ValidationError('This test was cancelled.')
+        result = attrs.get('result', self.instance.result)
+        if attrs.get('status') == TestOrder.Status.COMPLETED and not result.strip():
+            raise serializers.ValidationError({'result': 'Enter the result before marking the test done.'})
+        return attrs
+
+    def _validate_new(self, attrs):
+        appointment, test = attrs.get('appointment'), attrs.get('test')
+        if appointment is None or test is None:
+            raise serializers.ValidationError('Choose the visit and the test.')
+        user = self.context['request'].user
+        if role_of(user) == User.Role.DOCTOR and appointment.doctor.user_id != user.id:
+            raise serializers.ValidationError({'appointment': 'You can only order tests for your own patients.'})
+        if appointment.status == 'cancelled':
+            raise serializers.ValidationError({'appointment': 'That visit was cancelled.'})
+        if not test.is_active:
+            raise serializers.ValidationError({'test': 'That test is no longer offered.'})
+        attrs['status'] = TestOrder.Status.ORDERED
+        attrs.pop('result', None)
+        attrs.pop('result_flag', None)
+        return attrs
+
 
 class PrescriptionSerializer(serializers.ModelSerializer):
-    medicines = PrescriptionMedicineSerializer(many=True, write_only=True)
+    medicines = PrescriptionMedicineSerializer(many=True, write_only=True, required=False)
+    tests = TestRequestSerializer(many=True, write_only=True, required=False)
     prescription_medicines = PrescriptionMedicineSerializer(source='items', many=True, read_only=True)
+    test_orders = TestOrderBriefSerializer(source='appointment.test_orders', many=True, read_only=True)
+    patient_name = serializers.CharField(source='appointment.patient.__str__', read_only=True)
+    doctor_name = serializers.CharField(source='appointment.doctor.__str__', read_only=True)
+    appointment_date = serializers.DateTimeField(source='appointment.appointment_date', read_only=True)
+
+    # For the printed prescription.
+    patient_id = serializers.IntegerField(source='appointment.patient_id', read_only=True)
+    patient_age = serializers.IntegerField(source='appointment.patient.age', read_only=True, allow_null=True)
+    patient_gender = serializers.CharField(source='appointment.patient.get_gender_display', read_only=True)
+    patient_mrn = serializers.CharField(source='appointment.patient.medical_record_number', read_only=True)
+    patient_blood_group = serializers.CharField(source='appointment.patient.blood_group', read_only=True)
+    patient_allergies = serializers.CharField(source='appointment.patient.allergies', read_only=True)
+    doctor_specialization = serializers.CharField(source='appointment.doctor.specialization', read_only=True)
+    doctor_qualification = serializers.CharField(source='appointment.doctor.qualification', read_only=True)
+    doctor_license = serializers.CharField(source='appointment.doctor.license_number', read_only=True,
+                                           allow_null=True)
+    doctor_department = serializers.CharField(source='appointment.doctor.department.name', read_only=True,
+                                              allow_null=True)
+    bill_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Prescription
-        fields = ['id', 'appointment', 'diagnosis', 'notes', 'status', 'follow_up_date', 'created_at', 'medicines', 'prescription_medicines']
+        fields = [
+            'id', 'appointment', 'patient_name', 'doctor_name', 'appointment_date',
+            'diagnosis', 'notes', 'status', 'follow_up_date', 'created_at',
+            'medicines', 'tests', 'prescription_medicines', 'test_orders',
+            'patient_id', 'patient_age', 'patient_gender', 'patient_mrn', 'patient_blood_group',
+            'patient_allergies', 'doctor_specialization', 'doctor_qualification', 'doctor_license',
+            'doctor_department', 'bill_id',
+        ]
         read_only_fields = ['created_at']
+
+    def get_bill_id(self, prescription) -> int | None:
+        bill = prescription.appointment.bills.order_by('created_at').first()
+        return bill.id if bill else None
 
     def validate_appointment(self, appointment):
         user = self.context['request'].user
@@ -160,14 +507,30 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             )
         return appointment
 
+    def validate_status(self, status):
+        if status == Prescription.Status.DISPENSED:
+            raise serializers.ValidationError(
+                'The pharmacy marks a prescription dispensed when it issues the stock.')
+        return status
+
+    def validate(self, attrs):
+        if self.instance and self.instance.status == Prescription.Status.DISPENSED:
+            raise serializers.ValidationError('A dispensed prescription can no longer be changed.')
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
-        medicines_data = validated_data.pop('medicines')
+        medicines_data = validated_data.pop('medicines', [])
+        tests_data = validated_data.pop('tests', [])
         prescription = Prescription.objects.create(**validated_data)
         self._write_items(prescription, medicines_data)
+        self._write_tests(prescription, tests_data)
         return prescription
 
+    @transaction.atomic
     def update(self, instance, validated_data):
         medicines_data = validated_data.pop('medicines', None)
+        tests_data = validated_data.pop('tests', None)
         for field, value in validated_data.items():
             setattr(instance, field, value)
         instance.save()
@@ -175,6 +538,10 @@ class PrescriptionSerializer(serializers.ModelSerializer):
         if medicines_data is not None:
             instance.items.all().delete()
             self._write_items(instance, medicines_data)
+        if tests_data is not None:
+            # Tests with a result stay on record; only outstanding ones are replaced.
+            instance.appointment.test_orders.filter(status=TestOrder.Status.ORDERED).delete()
+            self._write_tests(instance, tests_data)
         return instance
 
     def _write_items(self, prescription, medicines_data):
@@ -183,12 +550,29 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             for item in medicines_data
         ])
 
+    def _write_tests(self, prescription, tests_data):
+        for item in tests_data:
+            TestOrder.objects.create(
+                appointment=prescription.appointment, test=item['test'],
+                instructions=item.get('instructions', ''), ordered_by=prescription.prescribed_by)
+
 class BillItemSerializer(serializers.ModelSerializer):
     line_total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
     class Meta:
         model = BillItem
-        fields = ['id', 'description', 'service_type', 'quantity', 'unit_price', 'line_total']
+        fields = ['id', 'description', 'service_type', 'quantity', 'unit_price', 'line_total', 'generated']
+        read_only_fields = ['generated']
+
+    def validate_quantity(self, quantity):
+        if quantity < 1:
+            raise serializers.ValidationError('The quantity must be at least 1.')
+        return quantity
+
+    def validate_unit_price(self, price):
+        if price < 0:
+            raise serializers.ValidationError('The price cannot be negative.')
+        return price
 
 
 class PaymentSerializer(serializers.ModelSerializer):
@@ -197,22 +581,81 @@ class PaymentSerializer(serializers.ModelSerializer):
         fields = ['id', 'bill', 'amount', 'method', 'reference', 'received_at']
         read_only_fields = ['received_at']
 
+    def validate_amount(self, amount):
+        if amount <= 0:
+            raise serializers.ValidationError('Enter an amount above zero.')
+        return amount
+
+    def validate(self, attrs):
+        balance = attrs['bill'].balance
+        if attrs['amount'] > balance:
+            raise serializers.ValidationError(
+                {'amount': f'That is more than the {balance} outstanding on this bill.'})
+        return attrs
+
 
 class BillSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source='patient.__str__', read_only=True)
     items = BillItemSerializer(many=True, read_only=True)
+    line_items = BillItemSerializer(many=True, write_only=True, required=False)
     payments = PaymentSerializer(many=True, read_only=True)
     total = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     amount_paid = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     balance = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
 
+    # For the printed invoice.
+    patient_mrn = serializers.CharField(source='patient.medical_record_number', read_only=True)
+    patient_phone = serializers.CharField(source='patient.phone', read_only=True)
+    patient_age = serializers.IntegerField(source='patient.age', read_only=True, allow_null=True)
+    patient_gender = serializers.CharField(source='patient.get_gender_display', read_only=True)
+    patient_address = serializers.CharField(source='patient.address', read_only=True)
+    doctor_name = serializers.CharField(source='appointment.doctor.__str__', read_only=True, allow_null=True)
+    visit_date = serializers.DateTimeField(source='appointment.appointment_date', read_only=True,
+                                           allow_null=True)
+
     class Meta:
         model = Bill
         fields = [
-            'id', 'patient', 'appointment', 'invoice_number', 'amount', 'tax', 'discount',
-            'paid', 'due_date', 'created_at', 'items', 'payments',
+            'id', 'patient', 'patient_name', 'appointment', 'invoice_number', 'amount', 'tax', 'discount',
+            'paid', 'due_date', 'created_at', 'items', 'line_items', 'payments',
             'total', 'amount_paid', 'balance',
+            'patient_mrn', 'patient_phone', 'patient_age', 'patient_gender', 'patient_address',
+            'doctor_name', 'visit_date',
         ]
-        read_only_fields = ['created_at', 'invoice_number']
+        # paid follows the payments recorded against the bill, so it is never set by hand.
+        read_only_fields = ['created_at', 'invoice_number', 'paid']
+        # With line items the amount is their sum, so it need not be sent.
+        extra_kwargs = {'amount': {'required': False}}
+
+    @transaction.atomic
+    def create(self, validated_data):
+        lines = validated_data.pop('line_items', [])
+        if not lines and 'amount' not in validated_data:
+            raise serializers.ValidationError({'amount': 'Enter an amount, or add the items being billed.'})
+        bill = super().create(validated_data)
+        BillItem.objects.bulk_create([BillItem(bill=bill, **line) for line in lines])
+        return recompute_bill(bill)
+
+    def update(self, instance, validated_data):
+        validated_data.pop('line_items', None)
+        if instance.items.exists():
+            validated_data.pop('amount', None)  # the sum of the lines
+        return recompute_bill(super().update(instance, validated_data))
+
+    def validate(self, attrs):
+        def current(name):
+            return attrs.get(name, getattr(self.instance, name, Decimal('0')))
+
+        if attrs.get('line_items'):
+            attrs['amount'] = sum((line['unit_price'] * line['quantity'] for line in attrs['line_items']),
+                                  Decimal('0'))
+        amount, tax, discount = current('amount'), current('tax'), current('discount')
+        for name, value in (('amount', amount), ('tax', tax), ('discount', discount)):
+            if value < 0:
+                raise serializers.ValidationError({name: 'This cannot be negative.'})
+        if discount > amount + tax:
+            raise serializers.ValidationError({'discount': 'The discount is larger than the bill.'})
+        return attrs
 
 class NotificationSerializer(serializers.ModelSerializer):
     class Meta:
@@ -344,11 +787,11 @@ class BloodRequestSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['created_at', 'requested_by', 'status']
 
-    def get_is_mine(self, obj):
+    def get_is_mine(self, obj) -> bool:
         request = self.context.get('request')
         return bool(request and obj.requested_by_id == request.user.id)
 
-    def get_my_reply(self, obj):
+    def get_my_reply(self, obj) -> str | None:
         request = self.context.get('request')
         donor = getattr(getattr(request, 'user', None), 'donor', None)
         if not donor:
@@ -378,7 +821,7 @@ class DonorResponseSerializer(serializers.ModelSerializer):
                   'blood_group', 'reply', 'responded_at']
         read_only_fields = ['responded_at', 'donor']
 
-    def get_donor_phone(self, obj):
+    def get_donor_phone(self, obj) -> str | None:
         if obj.reply != DonorResponse.Reply.YES:
             return None
         request = self.context.get('request')
@@ -410,6 +853,11 @@ class MedicationDoseSerializer(serializers.ModelSerializer):
         read_only_fields = ['confirmed_at', 'schedule']
 
 
+# Every day of a schedule becomes one row per dose time, built in a single request.
+# Without a cap, a ten-year schedule at six doses a day was 21,918 rows per POST.
+MAX_SCHEDULE_DAYS = 366
+
+
 class MedicationScheduleSerializer(serializers.ModelSerializer):
     adherence = serializers.IntegerField(read_only=True)
     dose_count = serializers.SerializerMethodField()
@@ -421,7 +869,7 @@ class MedicationScheduleSerializer(serializers.ModelSerializer):
                   'adherence', 'dose_count', 'created_at']
         read_only_fields = ['created_at', 'prescription']
 
-    def get_dose_count(self, obj):
+    def get_dose_count(self, obj) -> int:
         return obj.doses.count()
 
     def validate_times(self, times):
@@ -447,6 +895,9 @@ class MedicationScheduleSerializer(serializers.ModelSerializer):
         end = attrs.get('end_date') or getattr(self.instance, 'end_date', None)
         if start and end and end < start:
             raise serializers.ValidationError({'end_date': 'The end date is before the start date.'})
+        if start and end and (end - start).days >= MAX_SCHEDULE_DAYS:
+            raise serializers.ValidationError(
+                {'end_date': f'A schedule can cover at most {MAX_SCHEDULE_DAYS} days.'})
         return attrs
 
 
@@ -455,3 +906,19 @@ class CareContactSerializer(serializers.ModelSerializer):
         model = CareContact
         fields = ['id', 'name', 'phone', 'relationship', 'user',
                   'alert_after_misses', 'consent_given']
+        # Linking the contact's own account sends them alerts about this patient.
+        # Left writable, a patient could aim those alerts at any user, so an admin
+        # links the account after confirming who the contact is.
+        read_only_fields = ['user']
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source='actor.username', read_only=True, allow_null=True)
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id', 'created_at', 'actor', 'actor_username', 'actor_role', 'action',
+            'target_model', 'target_id', 'changes', 'ip_address',
+        ]
+        read_only_fields = fields

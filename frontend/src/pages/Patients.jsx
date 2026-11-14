@@ -1,196 +1,228 @@
-import { useEffect, useState } from "react";
-import { Plus, X } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { CalendarPlus, Pencil, UserPlus } from "lucide-react";
 import { patientsApi } from "../api.js";
-import { apiError } from "../errors.js";
 import { useAuth } from "../auth-context.js";
 import { canWrite } from "../permissions.js";
-import { useFlash } from "../flash.js";
+import { formatDate, fullName } from "../format.js";
+import { useDebounced, useLoader } from "../hooks.js";
+import { useToast } from "../toast-context.js";
 import {
   Alert,
+  Badge,
   Button,
-  IconButton,
-  Input,
+  Card,
+  Modal,
   PageHeader,
-  Select,
+  Pager,
+  SearchInput,
   Table,
-  Textarea,
 } from "../components/index.js";
+import PatientFormModal from "../components/PatientFormModal.jsx";
+
+function Detail({ label, children }) {
+  return (
+    <div>
+      <dt className="text-xs font-semibold uppercase tracking-wider text-ink-500">{label}</dt>
+      <dd className="mt-0.5 text-sm whitespace-pre-line text-ink-900">{children || "—"}</dd>
+    </div>
+  );
+}
 
 export default function Patients() {
   const { user } = useAuth();
+  const toast = useToast();
   const mayEdit = canWrite(user?.role, "patients");
+  const mayBook = canWrite(user?.role, "appointments");
 
-  const [patients, setPatients] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [notice, setNotice] = useFlash();
-
-  const [formIsOpen, setFormIsOpen] = useState(false);
-  const [dateOfBirth, setDateOfBirth] = useState("");
-  const [gender, setGender] = useState("");
-  const [bloodGroup, setBloodGroup] = useState("");
-  const [address, setAddress] = useState("");
-  const [phone, setPhone] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-
-  const [reloadCount, setReloadCount] = useState(0);
-  const reload = () => setReloadCount((c) => c + 1);
+  const [params, setParams] = useSearchParams();
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  // null = closed, {} = registering a new patient, a patient row = editing them
+  const [editing, setEditing] = useState(() => (params.get("new") && mayEdit ? {} : null));
+  const [viewing, setViewing] = useState(null);
 
   useEffect(() => {
-    async function load() {
-      try {
-        setIsLoading(true);
-        const data = await patientsApi.list();
-        setPatients(data);
-      } catch (err) {
-        setError(apiError(err, "Could not load patients."));
-      } finally {
-        setIsLoading(false);
-      }
+    if (params.has("new")) {
+      setParams(
+        (current) => {
+          current.delete("new");
+          return current;
+        },
+        { replace: true },
+      );
     }
-    load();
-  }, [reloadCount]);
+  }, [params, setParams]);
 
+  const settledSearch = useDebounced(search);
+  const load = useCallback(
+    () => patientsApi.listPage({ page, ...(settledSearch && { search: settledSearch }) }),
+    [page, settledSearch],
+  );
+  const { data, error, isLoading, reload } = useLoader(load, "Could not load patients.");
+  const rows = data?.results ?? [];
 
-  async function handleSave(e) {
-    e.preventDefault();
-    setIsSaving(true);
-    try {
-      await patientsApi.create({
-        date_of_birth: dateOfBirth,
-        gender,
-        blood_group: bloodGroup,
-        address,
-        phone,
-      });
-      setNotice("Patient registered.");
-      setFormIsOpen(false);
-      reload();
-    } catch (err) {
-      setError(apiError(err, "Could not add that patient."));
-    } finally {
-      setIsSaving(false);
+  function saved(patient) {
+    const isNew = !editing?.id;
+    setEditing(null);
+    reload();
+    if (isNew) {
+      toast.success(
+        `${fullName(patient.user_details, "Patient")} registered. An admin can set their password from the Admin section.`,
+      );
+    } else {
+      toast.success("Patient details updated.");
+      if (viewing?.id === patient.id) setViewing(patient);
     }
   }
 
   return (
     <div>
       <PageHeader
+        eyebrow="People"
         title="Patients"
-        subtitle="Manage patient records and demographics."
+        subtitle="Find a patient, see their details, or register a walk-in."
+        action={
+          mayEdit && (
+            <Button onClick={() => setEditing({})}>
+              <UserPlus size={15} /> Register patient
+            </Button>
+          )
+        }
       />
 
-      <Alert>{error}</Alert>
-      <Alert variant="success">{notice}</Alert>
+      <Card className="animate-rise mb-4 p-4 sm:p-5">
+        <SearchInput
+          placeholder="Search by name or phone"
+          value={search}
+          onChange={(value) => {
+            setSearch(value);
+            setPage(1);
+          }}
+          className="max-w-md"
+        />
+      </Card>
 
-      {formIsOpen && (
-        <form
-          onSubmit={handleSave}
-          className="animate-rise glass-strong mb-5 rounded-2xl p-5"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-ink-900">
-              Add Patient Details
-            </h2>
-            <IconButton onClick={() => setFormIsOpen(false)}>
-              <X size={16} />
-            </IconButton>
-          </div>
+      <Alert onRetry={reload}>{error}</Alert>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Input
-              label="Date of birth"
-              type="date"
-              required
-              value={dateOfBirth}
-              onChange={(e) => setDateOfBirth(e.target.value)}
-            />
-            <Select
-              label="Gender"
-              required
-              value={gender}
-              onChange={(e) => setGender(e.target.value)}
-            >
-              <option value="">Select...</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </Select>
-            <Select
-              label="Blood Group"
-              required
-              value={bloodGroup}
-              onChange={(e) => setBloodGroup(e.target.value)}
-            >
-              <option value="">Select...</option>
-              <option value="A+">A+</option>
-              <option value="O+">O+</option>
-              <option value="B+">B+</option>
-              <option value="AB+">AB+</option>
-              <option value="A-">A-</option>
-              <option value="O-">O-</option>
-              <option value="B-">B-</option>
-              <option value="AB-">AB-</option>
-            </Select>
-            <Input
-              label="Phone"
-              required
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
-          </div>
+      <p className="mb-3 text-sm text-ink-500" aria-live="polite">
+        {isLoading && !data ? "Loading…" : `${data?.count ?? 0} patient${data?.count === 1 ? "" : "s"}`}
+      </p>
 
-          <Textarea
-            label="Address"
-            className="mt-4"
-            required
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-          />
+      <Table
+        columns={["Name", "Record no.", "Age", "Gender", "Blood", "Phone", ""]}
+        isLoading={isLoading}
+        empty={search ? "No patients match that search." : "No patients registered yet."}
+      >
+        {rows.map((patient) => (
+          <tr
+            key={patient.id}
+            onClick={() => setViewing(patient)}
+            className="cursor-pointer transition-colors duration-150 hover:bg-white/60"
+          >
+            <td className="px-4 py-3 font-medium text-ink-900">
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setViewing(patient);
+                }}
+                className="text-left hover:text-brand-700 hover:underline focus-visible:outline-2 focus-visible:outline-brand-500"
+              >
+                {fullName(patient.user_details, `Patient #${patient.id}`)}
+              </button>
+            </td>
+            <td className="px-4 py-3 font-mono text-xs text-ink-500">{patient.medical_record_number}</td>
+            <td className="px-4 py-3 text-ink-700">{patient.age ?? "—"}</td>
+            <td className="px-4 py-3 capitalize text-ink-700">{patient.gender}</td>
+            <td className="px-4 py-3">{patient.blood_group ? <Badge tone="danger">{patient.blood_group}</Badge> : "—"}</td>
+            <td className="px-4 py-3 whitespace-nowrap text-ink-700">{patient.phone}</td>
+            <td className="px-4 py-3 text-right">
+              {mayEdit && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setEditing(patient);
+                  }}
+                >
+                  <Pencil size={13} /> Edit
+                </Button>
+              )}
+            </td>
+          </tr>
+        ))}
+      </Table>
+      <Pager page={page} count={data?.count ?? 0} onChange={setPage} />
 
-          <div className="mt-4 flex gap-2">
-            <Button type="submit" disabled={isSaving}>
-              {isSaving ? "Saving..." : "Save Patient"}
-            </Button>
-            <Button variant="secondary" onClick={() => setFormIsOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </form>
+      <Modal
+        open={Boolean(viewing)}
+        size="lg"
+        title={viewing ? fullName(viewing.user_details, "Patient") : ""}
+        subtitle={viewing?.medical_record_number && `Record ${viewing.medical_record_number}`}
+        onClose={() => setViewing(null)}
+        footer={
+          viewing && (
+            <>
+              {mayBook && (
+                <Link
+                  to="/appointments?book=1"
+                  className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium text-brand-700 hover:bg-brand-50"
+                >
+                  <CalendarPlus size={15} /> Book a visit
+                </Link>
+              )}
+              {mayEdit && (
+                <Button
+                  onClick={() => {
+                    setEditing(viewing);
+                  }}
+                >
+                  <Pencil size={14} /> Edit details
+                </Button>
+              )}
+            </>
+          )
+        }
+      >
+        {viewing && (
+          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-3">
+            <Detail label="Age">{viewing.age != null && `${viewing.age} years`}</Detail>
+            <Detail label="Date of birth">{viewing.date_of_birth && formatDate(viewing.date_of_birth)}</Detail>
+            <Detail label="Gender">
+              <span className="capitalize">{viewing.gender}</span>
+            </Detail>
+            <Detail label="Blood group">{viewing.blood_group}</Detail>
+            <Detail label="Phone">
+              {viewing.phone && (
+                <a href={`tel:${viewing.phone}`} className="text-brand-700 hover:underline">
+                  {viewing.phone}
+                </a>
+              )}
+            </Detail>
+            <Detail label="Email">{viewing.user_details?.email}</Detail>
+            <div className="sm:col-span-3">
+              <Detail label="Address">{viewing.address}</Detail>
+            </div>
+            <Detail label="Emergency contact">
+              {[viewing.emergency_contact_name, viewing.emergency_contact_phone].filter(Boolean).join(" · ")}
+            </Detail>
+            <Detail label="Allergies">{viewing.allergies}</Detail>
+            <Detail label="Long-term conditions">{viewing.chronic_conditions}</Detail>
+          </dl>
+        )}
+      </Modal>
+
+      {editing && (
+        <PatientFormModal
+          key={editing.id ?? "new"}
+          open
+          patient={editing.id ? editing : null}
+          onClose={() => setEditing(null)}
+          onSaved={saved}
+        />
       )}
-
-      <div className="animate-fade">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-semibold text-ink-900">
-            {isLoading ? "Loading..." : `${patients.length} Patients`}
-          </h2>
-          {mayEdit && (
-            <Button onClick={() => setFormIsOpen(true)}>
-              <Plus size={14} /> Add Patient
-            </Button>
-          )}
-        </div>
-
-        <Table
-          columns={["ID", "Name", "Age", "Gender", "Blood Group", "Phone"]}
-        >
-          {patients.map((pat) => (
-            <tr
-              key={pat.id}
-              className="transition-colors duration-150 hover:bg-white/60"
-            >
-              <td className="px-4 py-3 text-ink-700">{pat.id}</td>
-              <td className="px-4 py-3 text-ink-700">
-                {pat.user_details?.first_name} {pat.user_details?.last_name}
-              </td>
-              <td className="px-4 py-3 text-ink-700">{pat.age ?? "—"}</td>
-              <td className="px-4 py-3 text-ink-700">{pat.gender}</td>
-              <td className="px-4 py-3 text-ink-700">{pat.blood_group}</td>
-              <td className="px-4 py-3 text-ink-700">{pat.phone}</td>
-            </tr>
-          ))}
-        </Table>
-      </div>
     </div>
   );
 }

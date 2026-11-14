@@ -42,6 +42,16 @@ RENDER_EXTERNAL_HOSTNAME = env('RENDER_EXTERNAL_HOSTNAME', default='')
 if RENDER_EXTERNAL_HOSTNAME:
     ALLOWED_HOSTS = [*ALLOWED_HOSTS, RENDER_EXTERNAL_HOSTNAME]
 
+# Allows seed_demo to run with DEBUG off. Its accounts share one published password,
+# so leave this off anywhere that holds real patient data.
+DEMO_MODE = env.bool('DEMO_MODE', default=False)
+
+# Moving the admin off the default path keeps it out of drive-by scanners. It is not a
+# substitute for the login lockout below.
+ADMIN_URL = env('ADMIN_URL', default='admin/')
+if not ADMIN_URL.endswith('/'):
+    ADMIN_URL += '/'
+
 
 # Application definition
 
@@ -72,6 +82,8 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # exposes the request to the audit signal handlers; see backend/audit.py
+    'backend.audit.AuditContextMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -99,9 +111,17 @@ WSGI_APPLICATION = 'hms.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# PostgreSQL everywhere: development, CI and production run the same engine, so a
+# query that only works on SQLite cannot slip through. No default, on purpose — a
+# missing DATABASE_URL fails at startup instead of quietly creating a SQLite file.
+# Format: postgres://user:password@host:5432/dbname
 DATABASES = {
-    'default': env.db('DATABASE_URL', default=f'sqlite:///{BASE_DIR / "db.sqlite3"}'),
+    'default': env.db('DATABASE_URL'),
 }
+# Reuse each connection for a minute instead of opening one per request, and check
+# it is still alive before use so a database restart does not surface as errors.
+DATABASES['default']['CONN_MAX_AGE'] = env.int('CONN_MAX_AGE', default=60)
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 
 # Password validation
@@ -123,6 +143,20 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 AUTH_USER_MODEL = 'backend.User'
+
+# Every password check, API and admin alike, goes through the lockout backend.
+AUTHENTICATION_BACKENDS = ['backend.security.LockoutModelBackend']
+LOGIN_LOCKOUT_ATTEMPTS = env.int('LOGIN_LOCKOUT_ATTEMPTS', default=5)
+LOGIN_LOCKOUT_SECONDS = env.int('LOGIN_LOCKOUT_SECONDS', default=15 * 60)
+# Wrong passwords from one address, across all usernames, before that address is refused.
+LOGIN_ADDRESS_FAILURES = env.int('LOGIN_ADDRESS_FAILURES', default=20)
+
+# Lockout counters and throttle buckets live here. The local-memory default is per
+# process, so with several gunicorn workers each one keeps its own count. Production
+# sets CACHE_URL=dbcache://hms_cache, a table build.sh creates, so every worker shares it.
+CACHES = {
+    'default': env.cache_url('CACHE_URL', default='locmemcache://'),
+}
 
 
 # Internationalization
@@ -153,7 +187,9 @@ STORAGES = {
 }
 
 MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+# Uploaded medical documents. On Render, point this at a mounted persistent disk
+# (e.g. /var/data/media): the default folder is wiped on every deploy.
+MEDIA_ROOT = env.path('MEDIA_ROOT', default=BASE_DIR / 'media')
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 ALLOWED_UPLOAD_TYPES = {
@@ -163,6 +199,27 @@ ALLOWED_UPLOAD_TYPES = {
 }
 
 CORS_ALLOWED_ORIGINS = env('CORS_ALLOWED_ORIGINS')
+# Lets the frontend read a download's file name, so a saved record keeps its extension.
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
+
+# Where the admin's "View site" link and the React app's links back point.
+FRONTEND_URL = env('FRONTEND_URL', default=CORS_ALLOWED_ORIGINS[0] if CORS_ALLOWED_ORIGINS else None)
+
+# Printed at the top of prescriptions and invoices.
+HOSPITAL = {
+    'name': env('HOSPITAL_NAME', default='MediDesk General Hospital'),
+    'address': env('HOSPITAL_ADDRESS', default='House 12, Road 5, Dhanmondi, Dhaka 1205'),
+    'phone': env('HOSPITAL_PHONE', default='+880 2-5566 7788'),
+    'email': env('HOSPITAL_EMAIL', default='care@medidesk.example'),
+}
+
+# Password-reset emails. EMAIL_URL takes the form smtp+tls://user:password@host:587.
+# Unset, mail is printed to the log instead of sent, which is only useful locally.
+vars().update(env.email_url('EMAIL_URL', default='consolemail://'))
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='MediDesk <no-reply@medidesk.local>')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+# Reset links work once and expire after two hours.
+PASSWORD_RESET_TIMEOUT = 2 * 60 * 60
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
@@ -180,10 +237,18 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_THROTTLE_RATES': {
         'register': '5/hour',
-        'login': '10/hour',
+        # A flood guard only; failed attempts are limited separately in LoginView.
+        'login': '30/minute',
         'blood_request': '10/day',
+        'password': '10/hour',
+        'password_reset': '5/hour',
     },
+    # How many proxies sit in front of the app. Throttles and the audit log take the
+    # client address from X-Forwarded-For counted back by this many hops. Unset, DRF
+    # uses the whole header, which a client can pad to dodge the per-address limits.
+    'NUM_PROXIES': env.int('NUM_PROXIES', default=None),
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'backend.exceptions.api_exception_handler',
 }
 
 SPECTACULAR_SETTINGS = {
@@ -191,6 +256,20 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Patients, appointments, prescriptions, pharmacy and billing.',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+    # Several models have a field called status; name each set of choices explicitly.
+    'ENUM_NAME_OVERRIDES': {
+        'TestOrderStatusEnum': 'backend.models.TestOrder.Status',
+    },
+    # The schema maps every endpoint and field. By default only staff signed in to the
+    # Django admin can open it; API_DOCS_PUBLIC=True opens it to everyone.
+    'SERVE_PERMISSIONS': (
+        ['rest_framework.permissions.AllowAny'] if env.bool('API_DOCS_PUBLIC', default=False)
+        else ['rest_framework.permissions.IsAdminUser']
+    ),
+    'SERVE_AUTHENTICATION': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ],
 }
 
 SIMPLE_JWT = {
@@ -209,10 +288,12 @@ if not DEBUG:
     # Render terminates TLS at its proxy and forwards this header. Without it Django
     # sees plain HTTP and SECURE_SSL_REDIRECT would redirect forever.
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SECURE_SSL_REDIRECT = True
+    # On by default. The test client speaks plain HTTP, so CI's test step turns it
+    # off; otherwise every request gets a 301 before it reaches a view.
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
     # The platform's internal health probe arrives over plain HTTP, and a 301 to
     # HTTPS would read as a failed check.
-    SECURE_REDIRECT_EXEMPT = [r'^healthz/$']
+    SECURE_REDIRECT_EXEMPT = [r'^healthz/$', r'^readyz/$']
     SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
@@ -220,3 +301,37 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     X_FRAME_OPTIONS = 'DENY'
+
+
+# Everything goes to stdout, where Render and Docker collect it. Errors include the
+# traceback; set LOG_LEVEL=DEBUG to see more while investigating.
+LOG_LEVEL = env('LOG_LEVEL', default='INFO')
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'plain': {'format': '%(asctime)s %(levelname)s %(name)s: %(message)s'},
+    },
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler', 'formatter': 'plain'},
+    },
+    'root': {'handlers': ['console'], 'level': LOG_LEVEL},
+    'loggers': {
+        # 4xx responses are logged by django.request at WARNING; keep them, but do not
+        # let DEBUG SQL logging flood production logs.
+        'django.db.backends': {'level': 'INFO'},
+    },
+}
+
+# Error tracking. Set SENTRY_DSN to send unhandled errors to Sentry; personal data
+# is not sent, since requests here carry patient details.
+SENTRY_DSN = env('SENTRY_DSN', default='')
+if SENTRY_DSN:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=env('SENTRY_ENVIRONMENT', default='production'),
+        send_default_pii=False,
+        traces_sample_rate=env.float('SENTRY_TRACES_SAMPLE_RATE', default=0.0),
+    )

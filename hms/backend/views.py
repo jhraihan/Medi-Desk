@@ -1,6 +1,7 @@
 from datetime import date, timedelta
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.http import FileResponse, HttpResponse
@@ -11,63 +12,85 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema
 from rest_framework import generics, mixins, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
+from rest_framework_simplejwt.views import TokenObtainPairView
 
+from . import audit
+from .exceptions import LoginBlocked
 from .models import (
     COMPATIBLE_DONORS,
     Appointment,
+    AuditLog,
     Bill,
     BloodRequest,
     CareContact,
     Department,
     Doctor,
+    DoctorSchedule,
     DocumentAccessLog,
     DocumentShare,
     Donor,
     DonorResponse,
+    LabTest,
     MedicalDocument,
     MedicationDose,
     MedicationSchedule,
     Medicine,
+    MedicineStock,
     Notification,
     Patient,
     Prescription,
+    TestOrder,
 )
 from .permissions import (
     AppointmentAccess,
     BillAccess,
     CanDispense,
+    ClinicStatusAccess,
     DepartmentAccess,
     DoctorAccess,
+    LabTestAccess,
     MedicineAccess,
     PatientAccess,
     PrescriptionAccess,
+    ScheduleAccess,
+    StockAccess,
+    TestOrderAccess,
+    VisitWorkflowAccess,
     role_of,
 )
+from .security import address_is_blocked, record_address_failure
 from .serializers import (
     AppointmentSerializer,
+    BillItemSerializer,
     BillSerializer,
     BloodRequestSerializer,
     CareContactSerializer,
     DepartmentSerializer,
+    DoctorScheduleSerializer,
     DoctorSerializer,
     DocumentAccessLogSerializer,
     DocumentShareSerializer,
     DonorResponseSerializer,
     DonorSerializer,
+    LabTestSerializer,
+    LoginSerializer,
     MedicalDocumentSerializer,
     MedicationDoseSerializer,
     MedicationScheduleSerializer,
     MedicineSerializer,
+    MedicineStockSerializer,
     NotificationSerializer,
     PatientSerializer,
     PaymentSerializer,
     PrescriptionSerializer,
     RegisterSerializer,
+    TestOrderSerializer,
     UserSerializer,
 )
 from .services import (
@@ -80,8 +103,10 @@ from .services import (
     notify_matching_donors,
     queue_for_doctor,
     queue_state,
+    recompute_bill,
     refresh_average_consult_time,
     schedule_from_prescription,
+    sync_visit_bill,
 )
 
 User = get_user_model()
@@ -92,6 +117,42 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
     throttle_scope = 'register'
+
+
+class LoginView(TokenObtainPairView):
+    """Three limits on password guessing.
+
+    - the 'login' rate stops floods of requests from one address;
+    - failed attempts per address stop one address trying many usernames;
+    - the lockout in security.py stops many addresses guessing one account.
+
+    Successful sign-ins only count toward the first, so a hospital full of staff
+    behind one public address can still sign in at the start of a shift.
+    """
+
+    serializer_class = LoginSerializer
+    throttle_scope = 'login'
+
+    def post(self, request, *args, **kwargs):
+        address = BaseThrottle().get_ident(request)
+        if address_is_blocked(address):
+            raise LoginBlocked(wait=settings.LOGIN_LOCKOUT_SECONDS)
+        try:
+            return super().post(request, *args, **kwargs)
+        except AuthenticationFailed:
+            record_address_failure(address)
+            raise
+
+
+class ClinicView(APIView):
+    """Name and contact details printed at the top of prescriptions and invoices."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        return Response(settings.HOSPITAL)
 
 
 @extend_schema(responses=UserSerializer)
@@ -116,6 +177,10 @@ class ScopedViewSet(viewsets.ModelViewSet):
 
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
 
+    # Opening a single record of this kind is written to the audit log. Writes are
+    # logged for every audited model by the signals in audit.py.
+    audit_reads = False
+
     def scope_queryset(self, queryset, user, role):
         return queryset
 
@@ -126,6 +191,12 @@ class ScopedViewSet(viewsets.ModelViewSet):
         if role == User.Role.ADMIN:
             return queryset
         return self.scope_queryset(queryset, user, role)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if self.audit_reads:
+            audit.record(AuditLog.Action.READ, instance, request=request)
+        return Response(self.get_serializer(instance).data)
 
 
 class DepartmentViewSet(ScopedViewSet):
@@ -145,9 +216,12 @@ class DoctorViewSet(ScopedViewSet):
     ordering_fields = ['experience', 'user__first_name']
 
     @extend_schema(request=None, responses=DoctorSerializer)
-    @action(detail=True, methods=['patch'])
+    @action(detail=True, methods=['patch'], permission_classes=[IsAuthenticated, ClinicStatusAccess])
     def availability(self, request, pk=None):
         doctor = self.get_object()
+        if role_of(request.user) == User.Role.DOCTOR and doctor.user_id != request.user.id:
+            return Response({'detail': 'Not found.'}, status=404)
+
         status_value = request.data.get('clinic_status')
 
         if status_value not in Doctor.ClinicStatus.values:
@@ -180,6 +254,7 @@ class PatientViewSet(ScopedViewSet):
     filterset_fields = ['gender', 'blood_group']
     search_fields = ['user__first_name', 'user__last_name', 'phone']
     ordering_fields = ['user__first_name']
+    audit_reads = True
 
     def scope_queryset(self, queryset, user, role):
         if role == User.Role.PATIENT:
@@ -188,12 +263,31 @@ class PatientViewSet(ScopedViewSet):
             return queryset.filter(appointments__doctor__user=user).distinct()
         return queryset
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        if role_of(user) == User.Role.PATIENT:
+            if Patient.objects.filter(user=user).exists():
+                raise ValidationError('You already have a patient profile.')
+            serializer.save(user=user)
+        else:
+            serializer.save()
+
 
 class AppointmentViewSet(ScopedViewSet):
-    queryset = Appointment.objects.select_related('patient__user', 'doctor__user')
+    queryset = Appointment.objects.select_related('patient__user', 'doctor__user', 'prescription')
     serializer_class = AppointmentSerializer
     permission_classes = [IsAuthenticated, AppointmentAccess]
-    filterset_fields = ['doctor', 'patient', 'status']
+    # appointment_date__date=YYYY-MM-DD picks one calendar day.
+    filterset_fields = {
+        'doctor': ['exact'],
+        'patient': ['exact'],
+        'status': ['exact'],
+        'appointment_date': ['date', 'gte', 'lte'],
+    }
+    search_fields = [
+        'patient__user__first_name', 'patient__user__last_name',
+        'doctor__user__first_name', 'doctor__user__last_name', 'reason',
+    ]
     ordering_fields = ['appointment_date', 'created_at']
 
     def scope_queryset(self, queryset, user, role):
@@ -204,7 +298,8 @@ class AppointmentViewSet(ScopedViewSet):
         return queryset
 
     @extend_schema(request=None, responses=AppointmentSerializer)
-    @action(detail=True, methods=['post'], url_path='check-in')
+    @action(detail=True, methods=['post'], url_path='check-in',
+            permission_classes=[IsAuthenticated, VisitWorkflowAccess])
     def check_in(self, request, pk=None):
         appointment = self.get_object()
 
@@ -220,7 +315,7 @@ class AppointmentViewSet(ScopedViewSet):
         return Response(AppointmentSerializer(appointment).data)
 
     @extend_schema(request=None, responses=AppointmentSerializer)
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, VisitWorkflowAccess])
     def start(self, request, pk=None):
         appointment = self.get_object()
 
@@ -233,7 +328,7 @@ class AppointmentViewSet(ScopedViewSet):
         return Response(AppointmentSerializer(appointment).data)
 
     @extend_schema(request=None, responses=AppointmentSerializer)
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, VisitWorkflowAccess])
     def complete(self, request, pk=None):
         appointment = self.get_object()
 
@@ -253,8 +348,12 @@ class PrescriptionViewSet(ScopedViewSet):
     ).prefetch_related('items__medicine')
     serializer_class = PrescriptionSerializer
     permission_classes = [IsAuthenticated, PrescriptionAccess]
-    filterset_fields = ['appointment']
+    filterset_fields = ['appointment', 'status']
+    search_fields = [
+        'appointment__patient__user__first_name', 'appointment__patient__user__last_name', 'diagnosis',
+    ]
     ordering_fields = ['created_at']
+    audit_reads = True
 
     def scope_queryset(self, queryset, user, role):
         if role == User.Role.PATIENT:
@@ -262,6 +361,16 @@ class PrescriptionViewSet(ScopedViewSet):
         if role == User.Role.DOCTOR:
             return queryset.filter(appointment__doctor__user=user)
         return queryset
+
+    def perform_create(self, serializer):
+        # The visit's own doctor signs the prescription, also when an admin enters it.
+        appointment = serializer.validated_data['appointment']
+        prescription = serializer.save(prescribed_by=appointment.doctor)
+        sync_visit_bill(prescription.appointment)
+
+    def perform_update(self, serializer):
+        prescription = serializer.save()
+        sync_visit_bill(prescription.appointment)
 
     @extend_schema(request=None, responses=dict)
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, CanDispense])
@@ -284,21 +393,116 @@ class MedicineViewSet(ScopedViewSet):
     queryset = Medicine.objects.all()
     serializer_class = MedicineSerializer
     permission_classes = [IsAuthenticated, MedicineAccess]
-    search_fields = ['name', 'description']
+    filterset_fields = ['is_active', 'requires_prescription']
+    search_fields = ['name', 'generic_name', 'description']
     ordering_fields = ['name']
 
 
+class MedicineStockViewSet(ScopedViewSet):
+    queryset = MedicineStock.objects.select_related('medicine')
+    serializer_class = MedicineStockSerializer
+    permission_classes = [IsAuthenticated, StockAccess]
+    filterset_fields = ['medicine']
+    search_fields = ['medicine__name', 'batch_number']
+    ordering_fields = ['expiry_date', 'quantity']
+
+
+class LabTestViewSet(ScopedViewSet):
+    queryset = LabTest.objects.all()
+    serializer_class = LabTestSerializer
+    permission_classes = [IsAuthenticated, LabTestAccess]
+    filterset_fields = ['category', 'is_active']
+    search_fields = ['name', 'description']
+    ordering_fields = ['name', 'price']
+
+
+class TestOrderViewSet(ScopedViewSet):
+    queryset = TestOrder.objects.select_related(
+        'test', 'appointment__patient__user', 'appointment__doctor__user', 'completed_by')
+    serializer_class = TestOrderSerializer
+    permission_classes = [IsAuthenticated, TestOrderAccess]
+    filterset_fields = ['status', 'appointment', 'test', 'appointment__patient']
+    search_fields = ['test__name', 'appointment__patient__user__first_name',
+                     'appointment__patient__user__last_name', 'appointment__patient__medical_record_number']
+    ordering_fields = ['ordered_at', 'completed_at']
+    audit_reads = True
+
+    def scope_queryset(self, queryset, user, role):
+        if role == User.Role.PATIENT:
+            return queryset.filter(appointment__patient__user=user)
+        if role == User.Role.DOCTOR:
+            return queryset.filter(appointment__doctor__user=user)
+        return queryset
+
+    def perform_create(self, serializer):
+        appointment = serializer.validated_data['appointment']
+        order = serializer.save(ordered_by=appointment.doctor)
+        sync_visit_bill(order.appointment)
+
+    def perform_update(self, serializer):
+        finishing = serializer.validated_data.get('status') == TestOrder.Status.COMPLETED
+        extra = {'completed_at': timezone.now(), 'completed_by': self.request.user} if finishing else {}
+        order = serializer.save(**extra)
+        if order.status == TestOrder.Status.CANCELLED:
+            sync_visit_bill(order.appointment)
+
+    def perform_destroy(self, instance):
+        appointment = instance.appointment
+        super().perform_destroy(instance)
+        sync_visit_bill(appointment)
+
+
+class DoctorScheduleViewSet(ScopedViewSet):
+    queryset = DoctorSchedule.objects.select_related('doctor__user')
+    serializer_class = DoctorScheduleSerializer
+    permission_classes = [IsAuthenticated, ScheduleAccess]
+    filterset_fields = ['doctor', 'weekday']
+    ordering_fields = ['weekday', 'start_time']
+
+    def scope_queryset(self, queryset, user, role):
+        if role == User.Role.DOCTOR:
+            return queryset.filter(doctor__user=user)
+        return queryset
+
+
 class BillViewSet(ScopedViewSet):
-    queryset = Bill.objects.select_related('patient__user')
+    queryset = Bill.objects.select_related('patient__user').prefetch_related('items', 'payments')
     serializer_class = BillSerializer
     permission_classes = [IsAuthenticated, BillAccess]
     filterset_fields = ['patient', 'paid']
+    search_fields = ['invoice_number', 'patient__user__first_name', 'patient__user__last_name']
     ordering_fields = ['created_at', 'amount']
 
     def scope_queryset(self, queryset, user, role):
         if role == User.Role.PATIENT:
             return queryset.filter(patient__user=user)
+        if role == User.Role.DOCTOR:
+            return queryset.filter(appointment__doctor__user=user)
         return queryset
+
+    @extend_schema(request=BillItemSerializer, responses=BillSerializer)
+    @action(detail=True, methods=['post'], url_path='add-item')
+    def add_item(self, request, pk=None):
+        bill = self.get_object()
+        line = BillItemSerializer(data=request.data)
+        line.is_valid(raise_exception=True)
+        line.save(bill=bill)
+        bill = recompute_bill(Bill.objects.get(pk=bill.pk))
+        return Response(BillSerializer(bill).data)
+
+    @extend_schema(request=None, responses=BillSerializer)
+    @action(detail=True, methods=['post'], url_path=r'remove-item/(?P<item_id>\d+)')
+    def remove_item(self, request, pk=None, item_id=None):
+        bill = self.get_object()
+        item = bill.items.filter(pk=item_id).first()
+        if item is None:
+            return Response({'detail': 'That line is not on this bill.'}, status=404)
+        if bill.total - item.line_total < bill.amount_paid:
+            return Response({'detail': 'Removing this line would leave less to pay than was already paid.'},
+                            status=400)
+        item.delete()
+        bill = recompute_bill(Bill.objects.get(pk=bill.pk))
+        return Response(BillSerializer(bill).data)
 
     @extend_schema(request=PaymentSerializer, responses=BillSerializer)
     @action(detail=True, methods=['post'])
@@ -390,9 +594,8 @@ class DoctorQueueView(APIView):
 
         if not doctor:
             return Response({'detail': 'Not found.'}, status=404)
-        if role == User.Role.DOCTOR and doctor.user_id != request.user.id:
-            return Response({'detail': 'Not found.'}, status=404)
-        if role == User.Role.PATIENT:
+        own_queue = role == User.Role.DOCTOR and doctor.user_id == request.user.id
+        if not own_queue and role not in (User.Role.ADMIN, User.Role.RECEPTIONIST):
             return Response({'detail': 'Not found.'}, status=404)
 
         waiting = queue_for_doctor(doctor)
@@ -424,8 +627,12 @@ class MedicalDocumentViewSet(ScopedViewSet):
     search_fields = ['title', 'issued_by']
     ordering_fields = ['document_date', 'created_at']
 
+    # A share grants these and nothing else. Every other action, including edit,
+    # delete and re-sharing, is limited to the patient who owns the record.
+    SHARED_ACTIONS = ('list', 'retrieve', 'download')
+
     def scope_queryset(self, queryset, user, role):
-        if role == User.Role.PATIENT:
+        if role == User.Role.PATIENT or self.action not in self.SHARED_ACTIONS:
             return queryset.filter(patient__user=user)
         if role == User.Role.DOCTOR:
             return queryset.filter(
@@ -446,6 +653,7 @@ class MedicalDocumentViewSet(ScopedViewSet):
     def download(self, request, pk=None):
         document = self.get_object()
         DocumentAccessLog.objects.create(document=document, viewed_by=request.user)
+        audit.record(AuditLog.Action.READ, document, request=request)
         return FileResponse(document.file.open('rb'), as_attachment=True,
                             filename=Path(document.file.name).name)
 
@@ -554,6 +762,8 @@ class BloodRequestViewSet(viewsets.ModelViewSet):
             return queryset
 
         mine = Q(requested_by=self.request.user)
+        if self.action in ('update', 'partial_update', 'destroy'):
+            return queryset.filter(mine)
         if donor:
             compatible = [
                 group for group, sources in COMPATIBLE_DONORS.items()
@@ -672,8 +882,12 @@ class MedicationScheduleViewSet(viewsets.ModelViewSet):
         if prescription.schedules.exists():
             return Response({'detail': 'Reminders already exist for this prescription.'}, status=400)
 
-        created = schedule_from_prescription(
-            prescription, int(request.data.get('times_per_day', 2)))
+        try:
+            times_per_day = int(request.data.get('times_per_day', 2))
+        except (TypeError, ValueError):
+            return Response({'detail': 'times_per_day must be 1, 2 or 3.'}, status=400)
+
+        created = schedule_from_prescription(prescription, times_per_day)
         return Response(MedicationScheduleSerializer(created, many=True).data, status=201)
 
 

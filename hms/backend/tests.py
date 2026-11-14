@@ -192,6 +192,52 @@ class FilteringTests(ScopingTests):
         self.client.force_authenticate(admin)
         self.assertIn('count', self.client.get('/api/v1/patients/').data)
 
+    def test_appointments_filter_by_calendar_day(self):
+        admin = make_user('boss4', User.Role.ADMIN)
+        later = Appointment.objects.create(
+            patient=self.bob_patient, doctor=self.other_doctor,
+            appointment_date=timezone.now() + timezone.timedelta(days=5))
+        day = timezone.localtime(later.appointment_date).date().isoformat()
+
+        self.client.force_authenticate(admin)
+        rows = self.client.get(f'/api/v1/appointments/?appointment_date__date={day}').data['results']
+        self.assertEqual([row['id'] for row in rows], [later.id])
+
+    def test_appointments_search_by_patient_name(self):
+        self.bob.first_name = 'Robert'
+        self.bob.save(update_fields=['first_name'])
+        robert_appt = Appointment.objects.create(
+            patient=self.bob_patient, doctor=self.other_doctor,
+            appointment_date=timezone.now() + timezone.timedelta(days=3))
+
+        self.client.force_authenticate(make_user('boss5', User.Role.ADMIN))
+        rows = self.client.get('/api/v1/appointments/?search=robert').data['results']
+        self.assertEqual([row['id'] for row in rows], [robert_appt.id])
+
+    def test_prescription_and_bill_rows_carry_names_for_display(self):
+        medicine = Medicine.objects.create(name='Napa', unit='tablet')
+        self.client.force_authenticate(self.doctor_user)
+        created = self.client.post('/api/v1/prescriptions/', {
+            'appointment': self.alice_appt.id,
+            'diagnosis': 'fever',
+            'medicines': [{'medicine': medicine.id, 'dosage': '1 tablet', 'duration': '5 days'}],
+        }, format='json')
+        self.assertEqual(created.status_code, 201)
+
+        row = self.client.get('/api/v1/prescriptions/').data['results'][0]
+        self.assertEqual(row['patient_name'], str(self.alice_patient))
+        self.assertEqual(row['doctor_name'], str(self.doctor))
+        self.assertEqual(row['prescription_medicines'][0]['medicine_name'], 'Napa')
+
+        appointment = self.client.get(f'/api/v1/appointments/{self.alice_appt.id}/').data
+        self.assertTrue(appointment['has_prescription'])
+
+        self.client.force_authenticate(make_user('boss6', User.Role.ADMIN))
+        issued = self.client.get('/api/v1/prescriptions/?status=issued').data['results']
+        self.assertEqual(len(issued), 1)
+        bill = self.client.get(f'/api/v1/bills/{self.alice_bill.id}/').data
+        self.assertEqual(bill['patient_name'], str(self.alice_patient))
+
 
 class ModelRuleTests(ScopingTests):
     def test_age_is_derived_from_date_of_birth(self):
@@ -462,7 +508,9 @@ class QueueTests(APITestCase):
                 blood_group='O+', address='x', phone='0100000000'))
 
     def _appointment(self, patient, hour):
-        when = timezone.now().replace(hour=hour, minute=0, second=0, microsecond=0)
+        # Local time: check-in compares against the clinic's date, which differs from
+        # the UTC date for part of every day.
+        when = timezone.localtime().replace(hour=hour, minute=0, second=0, microsecond=0)
         if when < timezone.now():
             when = when + timedelta(days=0)
         return Appointment.objects.create(

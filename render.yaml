@@ -56,6 +56,31 @@ services:
       - key: TIME_ZONE
         value: Asia/Dhaka
 
+      # Lets `python manage.py seed_demo` create the demo accounts and data.
+      - key: DEMO_MODE
+        value: "True"
+
+      # Shares lockout counters and throttle buckets across gunicorn workers.
+      # build.sh creates the table.
+      - key: CACHE_URL
+        value: dbcache://hms_cache
+
+      # Target of the Django admin's "View site" link.
+      - key: FRONTEND_URL
+        value: https://medidesk-web.onrender.com
+
+      # Password-reset email. Render asks for these on first deploy; without
+      # EMAIL_URL the reset emails only appear in the service log.
+      # Format: smtp+tls://user:password@smtp.example.com:587
+      - key: EMAIL_URL
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        value: MediDesk <no-reply@example.com>
+
+      # Optional error tracking (sentry.io). Leave empty to disable.
+      - key: SENTRY_DSN
+        sync: false
+
   # -------------------------------------------------------------- React SPA
   - type: web
     name: medidesk-web
@@ -75,6 +100,11 @@ services:
       - key: VITE_API_URL
         value: https://medidesk-api.onrender.com/api/v1/
 
+      # One-click sign-in as each role on the login page, for showing the demo.
+      # Remove before real patient data goes in: the demo password is public.
+      - key: VITE_DEMO_MODE
+        value: "true"
+
     # React Router owns the paths, so every unmatched request returns index.html.
     routes:
       - type: rewrite
@@ -91,3 +121,11 @@ services:
       - path: /*
         name: Referrer-Policy
         value: strict-origin-when-cross-origin
+      # Tokens live in localStorage, so the main defence against their theft is not
+      # letting injected script run. connect-src must name the API origin.
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' https://medidesk-api.onrender.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      - path: /*
+        name: Permissions-Policy
+        value: camera=(), microphone=(), geolocation=()

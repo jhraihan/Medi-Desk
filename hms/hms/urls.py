@@ -1,4 +1,6 @@
+from django.conf import settings
 from django.contrib import admin
+from django.db import DatabaseError, connection
 from django.http import JsonResponse
 from django.urls import include, path
 from django.views.decorators.csrf import csrf_exempt
@@ -20,10 +22,23 @@ def healthz(request):
     return JsonResponse({'status': 'ok'})
 
 
+@csrf_exempt
+def readyz(request):
+    """Readiness: can this instance reach the database? For monitors and uptime checks,
+    not for the platform's liveness probe (see healthz)."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+    except DatabaseError:
+        return JsonResponse({'status': 'unavailable', 'database': 'down'}, status=503)
+    return JsonResponse({'status': 'ok', 'database': 'up'})
+
+
 urlpatterns = [
     path('healthz/', healthz, name='healthz'),
+    path('readyz/', readyz, name='readyz'),
 
-    path('admin/', admin.site.urls),
+    path(settings.ADMIN_URL, admin.site.urls),
 
     path('api/v1/', include('backend.urls')),
 
