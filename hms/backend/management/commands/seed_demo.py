@@ -445,6 +445,10 @@ class Command(BaseCommand):
                     status='approved', reason=reasons[index % len(reasons)]))
             index += 1
 
+        # build.sh reseeds on every deploy; a queue already under way must not rewind.
+        if any(a.status in ('checked_in', 'in_consultation', 'completed') for a in todays):
+            return
+
         for index, appointment in enumerate(todays[:3]):
             appointment.checked_in_at = timezone.now() - timedelta(minutes=30 - index * 10)
             appointment.status = 'checked_in'

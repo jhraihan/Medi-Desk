@@ -155,7 +155,9 @@ LOGIN_ADDRESS_FAILURES = env.int('LOGIN_ADDRESS_FAILURES', default=20)
 # process, so with several gunicorn workers each one keeps its own count. Production
 # sets CACHE_URL=dbcache://hms_cache, a table build.sh creates, so every worker shares it.
 CACHES = {
-    'default': env.cache_url('CACHE_URL', default='locmemcache://'),
+    # A variable left blank in the Render dashboard arrives as "", which the URL parsers
+    # reject, so blank counts as unset here and for EMAIL_URL below.
+    'default': environ.Env.cache_url_config(env('CACHE_URL', default='') or 'locmemcache://'),
 }
 
 
@@ -215,7 +217,7 @@ HOSPITAL = {
 
 # Password-reset emails. EMAIL_URL takes the form smtp+tls://user:password@host:587.
 # Unset, mail is printed to the log instead of sent, which is only useful locally.
-vars().update(env.email_url('EMAIL_URL', default='consolemail://'))
+vars().update(environ.Env.email_url_config(env('EMAIL_URL', default='') or 'consolemail://'))
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='MediDesk <no-reply@medidesk.local>')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 # Reset links work once and expire after two hours.

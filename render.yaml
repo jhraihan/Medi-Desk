@@ -9,6 +9,9 @@ databases:
     databaseName: medidesk
     user: medidesk
     plan: free
+    # Must match the API's region: the internal connection string the API uses
+    # only works inside one region, and Render cannot move a database later.
+    region: singapore
 
 services:
   # ---------------------------------------------------------------- Django API
@@ -56,9 +59,19 @@ services:
       - key: TIME_ZONE
         value: Asia/Dhaka
 
-      # Lets `python manage.py seed_demo` create the demo accounts and data.
+      # Lets seed_demo run; build.sh then loads the demo accounts and data on deploy.
       - key: DEMO_MODE
         value: "True"
+
+      # Your own admin account, created by build.sh on the first deploy (free
+      # instances have no shell for createsuperuser). Render asks for these when
+      # the Blueprint is applied; leave them blank to skip.
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
 
       # Shares lockout counters and throttle buckets across gunicorn workers.
       # build.sh creates the table.
