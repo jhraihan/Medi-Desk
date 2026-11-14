@@ -20,7 +20,7 @@ from rest_framework.throttling import BaseThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from . import audit
+from . import audit, pdf
 from .exceptions import LoginBlocked
 from .models import (
     COMPATIBLE_DONORS,
@@ -166,6 +166,12 @@ class MeView(APIView):
         data['doctor_id'] = getattr(getattr(user, 'doctor', None), 'id', None)
         data['patient_id'] = getattr(getattr(user, 'patient', None), 'id', None)
         return Response(data)
+
+
+def pdf_download(content, filename):
+    response = HttpResponse(content, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
 
 
 class ScopedViewSet(viewsets.ModelViewSet):
@@ -372,6 +378,13 @@ class PrescriptionViewSet(ScopedViewSet):
         prescription = serializer.save()
         sync_visit_bill(prescription.appointment)
 
+    @extend_schema(responses={(200, 'application/pdf'): OpenApiTypes.BINARY})
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def download_pdf(self, request, pk=None):
+        prescription = self.get_object()
+        audit.record(AuditLog.Action.READ, prescription, request=request)
+        return pdf_download(pdf.prescription_pdf(prescription), f'prescription-RX{prescription.pk:06d}.pdf')
+
     @extend_schema(request=None, responses=dict)
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, CanDispense])
     def dispense(self, request, pk=None):
@@ -451,6 +464,13 @@ class TestOrderViewSet(ScopedViewSet):
         super().perform_destroy(instance)
         sync_visit_bill(appointment)
 
+    @extend_schema(responses={(200, 'application/pdf'): OpenApiTypes.BINARY})
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def download_pdf(self, request, pk=None):
+        order = self.get_object()
+        audit.record(AuditLog.Action.READ, order, request=request)
+        return pdf_download(pdf.lab_report_pdf(order), f'lab-report-{order.pk:06d}.pdf')
+
 
 class DoctorScheduleViewSet(ScopedViewSet):
     queryset = DoctorSchedule.objects.select_related('doctor__user')
@@ -479,6 +499,12 @@ class BillViewSet(ScopedViewSet):
         if role == User.Role.DOCTOR:
             return queryset.filter(appointment__doctor__user=user)
         return queryset
+
+    @extend_schema(responses={(200, 'application/pdf'): OpenApiTypes.BINARY})
+    @action(detail=True, methods=['get'], url_path='pdf')
+    def download_pdf(self, request, pk=None):
+        bill = self.get_object()
+        return pdf_download(pdf.bill_pdf(bill), f'invoice-{bill.invoice_number}.pdf')
 
     @extend_schema(request=BillItemSerializer, responses=BillSerializer)
     @action(detail=True, methods=['post'], url_path='add-item')

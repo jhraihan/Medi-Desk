@@ -18,6 +18,7 @@ export default function PrintPrescription() {
       title="Prescription"
       ready={Boolean(rx)}
       error={error}
+      pdf={rx && { path: `prescriptions/${rx.id}/pdf/`, filename: `prescription-RX${String(rx.id).padStart(6, "0")}.pdf` }}
       meta={
         rx && (
           <div className="text-xs text-slate-600">
@@ -32,6 +33,7 @@ export default function PrintPrescription() {
           <section className="mt-5 grid grid-cols-2 gap-6 rounded-lg bg-slate-50 p-4 print:bg-white print:p-0">
             <div>
               <p className="text-base font-semibold text-slate-900">{rx.doctor_name}</p>
+              {rx.doctor_designation && <p className="font-semibold text-slate-800">{rx.doctor_designation}</p>}
               {rx.doctor_qualification && <p>{rx.doctor_qualification}</p>}
               <p className="text-slate-600">
                 {[rx.doctor_specialization, rx.doctor_department].filter(Boolean).join(" · ")}
@@ -127,6 +129,7 @@ export default function PrintPrescription() {
             <p className="text-[11px] text-slate-400">Printed {formatDateTime(new Date())} · MediDesk</p>
             <div className="w-56 border-t border-slate-400 pt-1 text-center">
               <p className="font-medium text-slate-900">{rx.doctor_name}</p>
+              {rx.doctor_designation && <p className="text-xs text-slate-600">{rx.doctor_designation}</p>}
               <p className="text-xs text-slate-500">Signature</p>
             </div>
           </footer>

@@ -39,6 +39,8 @@ DEPARTMENTS = [
     ('Orthopaedics', 'Bones, joints and muscles'),
 ]
 
+DESIGNATIONS = ['Senior Consultant', 'Associate Professor', 'Consultant', 'Junior Consultant']
+
 DOCTORS = [
     ('aisha', 'Aisha', 'Rahman', 'Cardiology', 'Interventional Cardiology', 12, '850.00'),
     ('daniel', 'Daniel', 'Okoye', 'Neurology', 'Clinical Neurology', 8, '900.00'),
@@ -135,6 +137,20 @@ LAB_TESTS = [
 
 # Sunday to Thursday, the Bangladeshi working week (Monday is 0).
 CLINIC_DAYS = [6, 0, 1, 2, 3]
+
+
+# A dose and a dispensed quantity that make sense for the form the medicine comes in.
+DOSE_BY_UNIT = {
+    'tablet': '1 tablet', 'capsule': '1 capsule', 'strip': '1 tablet', 'box': '1 capsule',
+    'bottle': '10 ml', 'tube': 'Apply thinly', 'inhaler': '2 puffs', 'pen': '10 units',
+    'vial': '1 g IV', 'bag': '500 ml IV', 'sachet': '1 sachet in 500 ml water',
+}
+
+
+def dose_for(medicine):
+    dosage = DOSE_BY_UNIT.get(medicine.unit, f'1 {medicine.unit}')
+    quantity = random.choice([10, 14, 20]) if medicine.unit in ('tablet', 'capsule') else random.choice([1, 2])
+    return dosage, quantity
 
 
 def clinic_time(day, hour, minute=0):
@@ -257,7 +273,7 @@ class Command(BaseCommand):
 
     def _doctors(self, departments):
         doctors = []
-        for username, first, last, dept, specialisation, years, fee in DOCTORS:
+        for index, (username, first, last, dept, specialisation, years, fee) in enumerate(DOCTORS):
             user = self._user(username, first, last, User.Role.DOCTOR)
             doctor, _ = Doctor.objects.get_or_create(
                 user=user,
@@ -271,6 +287,9 @@ class Command(BaseCommand):
                     'license_number': f'LIC{random.randint(10000, 99999)}',
                 },
             )
+            if not doctor.designation:
+                doctor.designation = DESIGNATIONS[index % len(DESIGNATIONS)]
+                doctor.save(update_fields=['designation'])
             for weekday in CLINIC_DAYS:
                 DoctorSchedule.objects.get_or_create(
                     doctor=doctor, weekday=weekday, start_time=time(9, 0),
@@ -374,13 +393,14 @@ class Command(BaseCommand):
                 notes='Rest and fluids. Return if symptoms persist.',
             )
             for medicine in random.sample(medicines, random.randint(1, 3)):
+                dosage, quantity = dose_for(medicine)
                 PrescriptionMedicine.objects.create(
                     prescription=prescription,
                     medicine=medicine,
-                    dosage=random.choice(['1 tablet', '2 tablets', '5 ml']),
+                    dosage=dosage,
                     frequency=random.choice(['Once daily', 'Twice daily', 'Every 8 hours']),
                     duration=random.choice(['5 days', '7 days', '14 days']),
-                    quantity=random.choice([6, 10, 14, 20]),
+                    quantity=quantity,
                 )
             # About half the visits come with tests, already reported since the visit is past.
             if random.random() < 0.5:

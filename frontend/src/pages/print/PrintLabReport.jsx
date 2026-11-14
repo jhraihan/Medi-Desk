@@ -16,6 +16,7 @@ export default function PrintLabReport() {
       title="Lab report"
       ready={Boolean(order)}
       error={error}
+      pdf={order && { path: `test-orders/${order.id}/pdf/`, filename: `lab-report-${String(order.id).padStart(6, "0")}.pdf` }}
       meta={
         order && (
           <div className="text-xs text-slate-600">

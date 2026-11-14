@@ -47,7 +47,8 @@ from .serializers import AuditLogSerializer
 class DoctorProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Doctor
-        fields = ['department', 'specialization', 'phone', 'experience', 'consultation_fee', 'qualification']
+        fields = ['department', 'specialization', 'phone', 'experience', 'consultation_fee', 'qualification',
+                  'designation']
 
 
 class PatientProfileSerializer(serializers.ModelSerializer):

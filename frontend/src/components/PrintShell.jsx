@@ -3,11 +3,12 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { Activity, ArrowLeft, Printer } from "lucide-react";
 import { fetchClinic } from "../api.js";
 import Button from "./Button.jsx";
+import DownloadPdfButton from "./DownloadPdfButton.jsx";
 
 // An A4 sheet with the hospital letterhead. On screen it sits on a grey desk with a
 // toolbar; printed, only the sheet comes out (see @media print in index.css).
 // With ?auto=1 the print dialog opens by itself once `ready` turns true.
-export default function PrintShell({ title, meta, ready, error, children }) {
+export default function PrintShell({ title, meta, ready, error, pdf, children }) {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const [clinic, setClinic] = useState(null);
@@ -40,9 +41,12 @@ export default function PrintShell({ title, meta, ready, error, children }) {
         <Button variant="secondary" size="sm" onClick={goBack}>
           <ArrowLeft size={14} /> Back
         </Button>
-        <Button size="sm" onClick={() => window.print()} disabled={!ready}>
-          <Printer size={14} /> Print
-        </Button>
+        <div className="flex gap-2">
+          {pdf && ready && <DownloadPdfButton path={pdf.path} filename={pdf.filename} label="Download PDF" variant="secondary" />}
+          <Button size="sm" onClick={() => window.print()} disabled={!ready}>
+            <Printer size={14} /> Print
+          </Button>
+        </div>
       </div>
 
       <article className="print-sheet mx-auto min-h-[297mm] max-w-[210mm] bg-white px-10 py-9 text-[13px] leading-relaxed text-slate-800 shadow-xl">

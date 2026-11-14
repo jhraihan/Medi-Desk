@@ -109,7 +109,7 @@ class DoctorSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'user_details', 'department', 'specialization', 'phone',
             'experience', 'is_available', 'clinic_status', 'status_note',
-            'consultation_fee', 'qualification', 'average_consult_minutes',
+            'consultation_fee', 'qualification', 'designation', 'average_consult_minutes',
         ]
         read_only_fields = ['average_consult_minutes']
 
@@ -477,6 +477,7 @@ class PrescriptionSerializer(serializers.ModelSerializer):
     patient_allergies = serializers.CharField(source='appointment.patient.allergies', read_only=True)
     doctor_specialization = serializers.CharField(source='appointment.doctor.specialization', read_only=True)
     doctor_qualification = serializers.CharField(source='appointment.doctor.qualification', read_only=True)
+    doctor_designation = serializers.CharField(source='appointment.doctor.designation', read_only=True)
     doctor_license = serializers.CharField(source='appointment.doctor.license_number', read_only=True,
                                            allow_null=True)
     doctor_department = serializers.CharField(source='appointment.doctor.department.name', read_only=True,
@@ -490,7 +491,8 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             'diagnosis', 'notes', 'status', 'follow_up_date', 'created_at',
             'medicines', 'tests', 'prescription_medicines', 'test_orders',
             'patient_id', 'patient_age', 'patient_gender', 'patient_mrn', 'patient_blood_group',
-            'patient_allergies', 'doctor_specialization', 'doctor_qualification', 'doctor_license',
+            'patient_allergies', 'doctor_specialization', 'doctor_qualification', 'doctor_designation',
+            'doctor_license',
             'doctor_department', 'bill_id',
         ]
         read_only_fields = ['created_at']

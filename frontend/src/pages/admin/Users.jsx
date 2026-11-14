@@ -60,6 +60,7 @@ const EMPTY_DOCTOR = {
   experience: "",
   consultation_fee: "",
   qualification: "",
+  designation: "",
 };
 
 const EMPTY_PATIENT = { gender: "", date_of_birth: "", blood_group: "", phone: "", address: "" };
@@ -397,8 +398,16 @@ export default function Users() {
               />
               <Input
                 label="Qualification"
+                placeholder="MBBS, FCPS (Medicine)"
                 value={doctor.qualification}
                 onChange={(e) => setDoctor({ ...doctor, qualification: e.target.value })}
+              />
+              <Input
+                label="Designation"
+                placeholder="Senior Consultant"
+                hint="Printed under the doctor's name on prescriptions."
+                value={doctor.designation}
+                onChange={(e) => setDoctor({ ...doctor, designation: e.target.value })}
               />
             </div>
           </fieldset>

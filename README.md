@@ -63,9 +63,11 @@ hand, picking medicines and tests from the catalogue.
 own. The front desk records the result and flags anything that needs attention; the patient
 sees it straight away and can print the report.
 
-**Printing.** Prescriptions (letterhead, doctor's registration number, ℞ list, tests,
-advice, signature line), invoices with a paid/unpaid stamp, and lab reports all print on A4
-from the browser, or save as PDF. The hospital name and address on the letterhead come from
+**Printing and PDF downloads.** Prescriptions (letterhead, the doctor's name, designation,
+qualification and registration number, ℞ list, tests, advice, signature line), invoices with
+a paid/unpaid stamp, and lab reports print on A4 from the browser and download as real PDF
+files, generated on the server with reportlab. A doctor can reopen a prescription to add
+medicines or tests until it is dispensed; the bill follows. The hospital name and address on the letterhead come from
 `HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_PHONE` and `HOSPITAL_EMAIL`.
 
 **Auditing.** Every change to patient, billing, pharmacy and staff records, and every time a

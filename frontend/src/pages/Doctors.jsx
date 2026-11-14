@@ -117,6 +117,7 @@ export default function Doctors() {
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-ink-900">{doctorLabel(doctor)}</p>
+                  {doctor.designation && <p className="truncate text-xs font-medium text-brand-700">{doctor.designation}</p>}
                   <p className="flex items-center gap-1 truncate text-sm text-ink-500">
                     <Stethoscope size={13} /> {doctor.specialization}
                   </p>

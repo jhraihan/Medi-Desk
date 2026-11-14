@@ -379,6 +379,22 @@ export async function fetchClinic() {
 export function openPrintable(path) {
   window.open(`${path}?auto=1`, "_blank");
 }
+
+// Saves a server-made PDF (prescription, invoice, lab report) under the name the API
+// gives it. Fetched through the client because the request needs the sign-in token.
+export async function downloadPdf(path, fallbackName) {
+  const response = await API.get(path, { responseType: "blob" });
+  const disposition = response.headers["content-disposition"] ?? "";
+  const name = disposition.match(/filename="?([^";]+)"?/)?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(new Blob([response.data], { type: "application/pdf" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
 export const doctorSchedulesApi = createCrudApi("doctor-schedules");
 
 // Admin section. Every endpoint below answers 403 for any role but admin.
