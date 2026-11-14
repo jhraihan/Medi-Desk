@@ -37,7 +37,8 @@ const STATUS_FILTERS = [
 const METHODS = [
   { value: "cash", label: "Cash" },
   { value: "card", label: "Card" },
-  { value: "transfer", label: "Bank / mobile transfer" },
+  { value: "mobile", label: "Mobile banking (bKash, Nagad)" },
+  { value: "transfer", label: "Bank transfer" },
   { value: "insurance", label: "Insurance" },
 ];
 

@@ -55,15 +55,35 @@ buttons for each role. That publishes an admin password, so only on demo deploym
   too.
 - `ScopedViewSet.scope_queryset` narrows rows per role (a patient sees only their own).
   Rows outside the scope 404 rather than 403.
-- The frontend mirrors the rules only to hide what would fail: `frontend/src/permissions.js`
-  (`canWrite`), `navigation.js` (`NAV` roles, `canVisit`) and the `RoleRoute` guards in
-  `App.jsx`. Keep all three in step with the backend when a rule changes.
+- The frontend mirrors the rules only to hide what would fail.
+  - `frontend/src/navigation.js` is the single list of pages: who may open each one, and
+    what each role calls it. Labels are per role: "Dispensing" for the pharmacist, "My queue"
+    and "My patients" for the doctor, "My bills" for the patient.
+  - The side bar (`navFor`), the route guards in `App.jsx` (`rolesFor`) and `canVisit` all
+    read that list. Add a page there, not in `App.jsx` alone.
+  - `permissions.js` (`canWrite`) hides write buttons.
+- Who does what (real-hospital split, enforced by the API):
+  - **Front desk** (receptionist): bookings, check-in (`CheckInAccess`), payments, test
+    results, patient registration. No clinical history, no starting or finishing
+    consultations, no medicine catalogue, no blood network.
+  - **Doctor**: starts and finishes their own consultations (`ConsultationAccess`),
+    prescribes, orders tests, reads the history of patients they treated
+    (`patients/{id}/history/`, `PatientHistoryAccess`). No billing pages; they print the
+    visit bill from the prescription.
+  - **Pharmacist**: dispensing queue (opens on "To dispense", shows unexpired stock per item),
+    medicines and stock only.
+  - **Patient**: their own visits, prescriptions, results, records, bills, reminders, blood
+    donors.
+  - **Admin**: everything, plus Reports (`admin/reports/`) and the Admin section.
 
 ### Admin control
 - The React app is the main admin panel. Records are edited on their own pages (Doctors,
   Patients, Medicines, Appointments, Prescriptions, Billing, Lab tests). The Admin section
   (`pages/admin/`) holds Users & roles, Departments, Doctor schedules, Pharmacy stock, the
-  lab test catalogue, Hospital details, Audit log, and a link to the Django admin.
+  lab test catalogue, Hospital details, Reports (billed vs collected, by service, payment
+  method and doctor, top medicines and tests, CSV export), Audit log, and a link to the
+  Django admin.
+- Dashboards (`services.dashboard_for`) give each role the numbers it acts on today.
 - The Django admin (`backend/admin.py`) covers every model. `HospitalPermissions` gives the
   admin role full rights without permission rows. A test fails if a model is not registered,
   so register every new model.
@@ -111,7 +131,9 @@ The public `GET /api/v1/clinic/` returns it for the print pages.
 
 ### Conventions
 - Time zone is `Asia/Dhaka`. Use `timezone.localdate()` and `timezone.localtime()` in date
-  logic; UTC dates caused flaky queue tests.
+  logic, never `date.today()` or `timezone.now().date()`. Those give the server's (UTC)
+  date and caused flaky queue tests and wrong "today" counts.
+- Payment methods include `mobile` (bKash, Nagad), the most common in Bangladesh.
 - drf-spectacular: a second model with a `status` choices field needs an entry in
   `ENUM_NAME_OVERRIDES` (settings) or the schema warns.
 - Frontend:
@@ -152,4 +174,7 @@ The public `GET /api/v1/clinic/` returns it for the print pages.
   - PR #4: full admin control (doctor add/edit, medicine edit/retire/delete, admin deletes,
     bill VAT/discount edits), `HospitalProfile` (migration 0015), the blank-second-page
     print fix, the `apiError` list fix, and this file.
+- PR #6 (branch `role-review`), awaiting merge: the per-role cleanup, doctor patient
+  history, pharmacy stock check, role dashboards, admin Reports, mobile banking payments,
+  clinic-date fixes.
 - Render deployment: not confirmed yet.

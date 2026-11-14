@@ -52,17 +52,19 @@ from .permissions import (
     AppointmentAccess,
     BillAccess,
     CanDispense,
+    CheckInAccess,
     ClinicStatusAccess,
+    ConsultationAccess,
     DepartmentAccess,
     DoctorAccess,
     LabTestAccess,
     MedicineAccess,
     PatientAccess,
+    PatientHistoryAccess,
     PrescriptionAccess,
     ScheduleAccess,
     StockAccess,
     TestOrderAccess,
-    VisitWorkflowAccess,
     role_of,
 )
 from .security import address_is_blocked, record_address_failure
@@ -102,6 +104,7 @@ from .services import (
     dispense_prescription,
     mark_overdue_doses,
     notify_matching_donors,
+    patient_history,
     queue_for_doctor,
     queue_state,
     recompute_bill,
@@ -279,6 +282,13 @@ class PatientViewSet(ScopedViewSet):
         else:
             serializer.save()
 
+    @extend_schema(responses=dict)
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated, PatientHistoryAccess])
+    def history(self, request, pk=None):
+        patient = self.get_object()
+        audit.record(AuditLog.Action.READ, patient, request=request)
+        return Response(patient_history(patient))
+
 
 class AppointmentViewSet(ScopedViewSet):
     queryset = Appointment.objects.select_related('patient__user', 'doctor__user', 'prescription')
@@ -306,7 +316,7 @@ class AppointmentViewSet(ScopedViewSet):
 
     @extend_schema(request=None, responses=AppointmentSerializer)
     @action(detail=True, methods=['post'], url_path='check-in',
-            permission_classes=[IsAuthenticated, VisitWorkflowAccess])
+            permission_classes=[IsAuthenticated, CheckInAccess])
     def check_in(self, request, pk=None):
         appointment = self.get_object()
 
@@ -322,7 +332,7 @@ class AppointmentViewSet(ScopedViewSet):
         return Response(AppointmentSerializer(appointment).data)
 
     @extend_schema(request=None, responses=AppointmentSerializer)
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, VisitWorkflowAccess])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, ConsultationAccess])
     def start(self, request, pk=None):
         appointment = self.get_object()
 
@@ -335,7 +345,7 @@ class AppointmentViewSet(ScopedViewSet):
         return Response(AppointmentSerializer(appointment).data)
 
     @extend_schema(request=None, responses=AppointmentSerializer)
-    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, VisitWorkflowAccess])
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, ConsultationAccess])
     def complete(self, request, pk=None):
         appointment = self.get_object()
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, PlayCircle, RefreshCw } from "lucide-react";
+import { Link } from "react-router-dom";
+import { CheckCircle2, FilePlus2, History, PlayCircle, RefreshCw } from "lucide-react";
 import {
   completeAppointment,
   doctorsApi,
@@ -24,6 +25,7 @@ import {
   PageHeader,
   Select,
 } from "../components/index.js";
+import PatientHistoryModal from "../components/PatientHistoryModal.jsx";
 
 const STATUSES = [
   { value: "in_clinic", label: "In clinic" },
@@ -63,6 +65,10 @@ export default function Queue() {
   const [note, setNote] = useState(null);
 
   const ownDoctorId = user?.role === "doctor" ? user.doctor_id : null;
+  // Only the doctor (or an admin standing in) starts and finishes a consultation and
+  // reads the chart. The front desk watches the line and checks people in.
+  const runsConsultation = ["doctor", "admin"].includes(user?.role);
+  const [historyFor, setHistoryFor] = useState(null);
 
   useEffect(() => {
     if (ownDoctorId) return;
@@ -247,13 +253,26 @@ export default function Queue() {
             <p className="mt-1 text-2xl font-semibold">{current.patient_name}</p>
             {current.reason && <p className="text-sm text-white/70">{current.reason}</p>}
           </div>
-          <Button
-            variant="secondary"
-            busy={workingId === current.appointment_id}
-            onClick={() => act(completeAppointment, current.appointment_id, `Finished with ${current.patient_name}.`)}
-          >
-            {workingId !== current.appointment_id && <CheckCircle2 size={16} />} Finish consultation
-          </Button>
+          {runsConsultation && (
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={() => setHistoryFor(current)}>
+                <History size={16} /> History
+              </Button>
+              <Link
+                to={`/prescriptions?new=1&appointment=${current.appointment_id}`}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/15 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/30 transition-colors hover:bg-white/25"
+              >
+                <FilePlus2 size={16} /> Prescribe
+              </Link>
+              <Button
+                variant="secondary"
+                busy={workingId === current.appointment_id}
+                onClick={() => act(completeAppointment, current.appointment_id, `Finished with ${current.patient_name}.`)}
+              >
+                {workingId !== current.appointment_id && <CheckCircle2 size={16} />} Finish consultation
+              </Button>
+            </div>
+          )}
         </Card>
       )}
 
@@ -284,18 +303,28 @@ export default function Queue() {
                 </p>
               </div>
 
-              <Button
-                variant={index === 0 && !current ? "primary" : "ghost"}
-                busy={workingId === row.appointment_id}
-                disabled={workingId !== null}
-                onClick={() => act(startAppointment, row.appointment_id, `Now seeing ${row.patient_name}.`)}
-              >
-                {workingId !== row.appointment_id && <PlayCircle size={16} />} Start
-              </Button>
+              {runsConsultation && (
+                <div className="flex shrink-0 gap-1.5">
+                  <Button variant="ghost" onClick={() => setHistoryFor(row)} title="Past visits, medicines and results">
+                    <History size={16} />
+                    <span className="hidden sm:inline">History</span>
+                  </Button>
+                  <Button
+                    variant={index === 0 && !current ? "primary" : "ghost"}
+                    busy={workingId === row.appointment_id}
+                    disabled={workingId !== null}
+                    onClick={() => act(startAppointment, row.appointment_id, `Now seeing ${row.patient_name}.`)}
+                  >
+                    {workingId !== row.appointment_id && <PlayCircle size={16} />} Start
+                  </Button>
+                </div>
+              )}
             </Card>
           ))}
         </ol>
       )}
+
+      {historyFor && <PatientHistoryModal patientId={historyFor.patient_id} onClose={() => setHistoryFor(null)} />}
     </>
   );
 }

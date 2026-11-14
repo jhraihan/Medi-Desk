@@ -3,14 +3,15 @@ import { Link } from "react-router-dom";
 import {
   Activity,
   BadgeDollarSign,
+  BarChart3,
   BellRing,
   Boxes,
   CalendarCheck,
   CalendarPlus,
   ClipboardList,
   Clock,
-  FilePlus2,
   FileText,
+  FlaskConical,
   Package,
   Receipt,
   ShieldCheck,
@@ -30,32 +31,37 @@ import PatientFormModal from "../components/PatientFormModal.jsx";
 
 const TILES = {
   today_appointments: { label: "Appointments today", icon: CalendarCheck, to: "/appointments?when=today" },
+  waiting_now: { label: "In the clinic now", icon: Clock, to: "/queue" },
+  seen_today: { label: "Seen today", icon: Stethoscope, to: "/appointments?when=today&status=completed" },
+  results_this_week: { label: "Results this week", icon: FlaskConical, to: "/lab-tests" },
   pending_approvals: { label: "Awaiting approval", icon: ClipboardList, to: "/appointments?status=pending" },
-  patients_seen_this_week: { label: "Seen this week", icon: Stethoscope, to: "/patients" },
-  prescriptions_issued: { label: "Prescriptions issued", icon: ClipboardList, to: "/prescriptions" },
-  next_appointment: { label: "Next appointment", icon: CalendarCheck, to: "/appointments" },
-  active_prescriptions: { label: "Active prescriptions", icon: ClipboardList, to: "/prescriptions" },
-  outstanding_balance: { label: "Outstanding balance", icon: Receipt, to: "/billing?status=unpaid" },
-  today_queue: { label: "In today's queue", icon: Clock, to: "/queue" },
-  unconfirmed: { label: "Unconfirmed bookings", icon: ClipboardList, to: "/appointments?status=pending" },
+  tests_awaiting_results: { label: "Tests awaiting results", icon: FlaskConical, to: "/lab-tests" },
   unpaid_invoices: { label: "Unpaid invoices", icon: Receipt, to: "/billing?status=unpaid" },
-  revenue_this_month: { label: "Billed this month", icon: BadgeDollarSign, to: "/billing" },
-  outstanding_invoices: { label: "Outstanding invoices", icon: Receipt, to: "/billing?status=unpaid" },
-  active_doctors: { label: "Doctors available", icon: Stethoscope, to: "/doctors" },
-  total_patients: { label: "Patients", icon: Users, to: "/patients" },
+  collected_today: { label: "Collected today", icon: BadgeDollarSign, to: "/billing" },
+  collected_this_month: { label: "Collected this month", icon: BadgeDollarSign, to: "/admin/reports" },
+  outstanding_invoices: { label: "Unpaid invoices", icon: Receipt, to: "/billing?status=unpaid" },
+  active_doctors: { label: "Doctors taking bookings", icon: Stethoscope, to: "/doctors" },
+  total_patients: { label: "Registered patients", icon: Users, to: "/patients" },
+  to_dispense: { label: "To dispense", icon: FileText, to: "/prescriptions?status=issued" },
   low_stock: { label: "Low on stock", icon: Package, to: "/stock" },
-  medicines: { label: "Medicines listed", icon: Package, to: "/medicines" },
-  expiring_soon: { label: "Expiring soon", icon: Package, to: "/stock" },
+  expiring_soon: { label: "Expiring in 30 days", icon: Package, to: "/stock" },
+  expired_batches: { label: "Expired, still on shelf", icon: Package, to: "/stock" },
+  next_appointment: { label: "Next appointment", icon: CalendarCheck, to: "/appointments" },
+  medicines_to_collect: { label: "Medicines to collect", icon: FileText, to: "/prescriptions" },
+  results_ready: { label: "New test results", icon: FlaskConical, to: "/lab-tests" },
+  outstanding_balance: { label: "Outstanding balance", icon: Receipt, to: "/billing?status=unpaid" },
 };
 
-const MONEY = ["revenue_this_month", "outstanding_balance"];
+const MONEY = ["collected_today", "collected_this_month", "outstanding_balance"];
+// Numbers that need someone to act when they are above zero.
+const ALARMS = ["low_stock", "expired_batches", "to_dispense", "tests_awaiting_results", "results_ready"];
 
 // The shortcuts each role reaches for most, so the first screen is a launch pad.
 const QUICK_ACTIONS = {
   patient: [
     { to: "/appointments?book=1", label: "Book a visit", icon: CalendarPlus },
     { to: "/my-queue", label: "My place in line", icon: Clock },
-    { to: "/records", label: "My records", icon: FileText },
+    { to: "/lab-tests", label: "My test results", icon: FlaskConical },
     { to: "/reminders", label: "Medicine reminders", icon: BellRing },
   ],
   receptionist: [
@@ -67,8 +73,8 @@ const QUICK_ACTIONS = {
   doctor: [
     { to: "/queue", label: "My queue", icon: Activity },
     { to: "/appointments?when=today", label: "Today's appointments", icon: CalendarCheck },
-    { to: "/prescriptions?new=1", label: "Write prescription", icon: FilePlus2 },
-    { to: "/records", label: "Shared records", icon: FileText },
+    { to: "/patients", label: "My patients", icon: Users },
+    { to: "/lab-tests", label: "Test results", icon: FlaskConical },
   ],
   pharmacist: [
     { to: "/prescriptions?status=issued", label: "To dispense", icon: FileText },
@@ -76,10 +82,10 @@ const QUICK_ACTIONS = {
     { to: "/medicines", label: "Medicines", icon: Package },
   ],
   admin: [
-    { to: "/admin", label: "Admin overview", icon: ShieldCheck },
+    { to: "/admin/reports", label: "Reports", icon: BarChart3 },
     { to: "/admin/users", label: "Users & roles", icon: Users },
+    { to: "/admin", label: "Admin overview", icon: ShieldCheck },
     { to: "/appointments?book=1", label: "Book appointment", icon: CalendarPlus },
-    { to: "/patients?new=1", label: "Register patient", icon: UserPlus },
   ],
 };
 
@@ -200,7 +206,7 @@ export default function Dashboard() {
           <div className="stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {tiles.map(([key, value]) => {
               const meta = TILES[key] ?? { label: humanize(key) };
-              const alarming = key === "low_stock" && Number(value) > 0;
+              const alarming = ALARMS.includes(key) && Number(value) > 0;
               return (
                 <StatTile
                   key={key}
@@ -220,14 +226,14 @@ export default function Dashboard() {
                 <span className="rounded-xl bg-brand-50 p-2 text-brand-600">
                   <Activity size={16} />
                 </span>
-                <h2 className="font-semibold text-ink-900">Appointments by status</h2>
+                <h2 className="font-semibold text-ink-900">Today's appointments by status</h2>
               </div>
 
               <div className="space-y-1">
                 {byStatus.map((row) => (
                   <Link
                     key={row.status}
-                    to={`/appointments?status=${row.status}`}
+                    to={`/appointments?when=today&status=${row.status}`}
                     className="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/60 focus-visible:outline-2 focus-visible:outline-brand-500"
                   >
                     <span className="w-32 text-xs capitalize text-ink-500">{humanize(row.status)}</span>

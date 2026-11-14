@@ -6,7 +6,7 @@ Accounts are deactivated rather than deleted. Deleting a user cascades into thei
 patient or doctor profile and from there into appointments, prescriptions and bills.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 
 import django_filters
@@ -14,7 +14,8 @@ from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, F, Sum
+from django.db.models import Count, DecimalField, ExpressionWrapper, F, Q, Sum
+from django.db.models.functions import TruncDate
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, serializers, viewsets
@@ -29,6 +30,7 @@ from .models import (
     Appointment,
     AuditLog,
     Bill,
+    BillItem,
     BloodRequest,
     Department,
     Doctor,
@@ -38,6 +40,8 @@ from .models import (
     MedicineStock,
     Patient,
     Payment,
+    PrescriptionMedicine,
+    TestOrder,
     User,
 )
 from .permissions import IsAdmin
@@ -303,3 +307,107 @@ class AdminHospitalView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+
+MAX_REPORT_DAYS = 366
+BILL_TOTAL = ExpressionWrapper(F('amount') + F('tax') - F('discount'),
+                               output_field=DecimalField(max_digits=12, decimal_places=2))
+LINE_TOTAL = ExpressionWrapper(F('quantity') * F('unit_price'),
+                               output_field=DecimalField(max_digits=12, decimal_places=2))
+
+
+def _report_period(params):
+    today = timezone.localdate()
+    try:
+        end = date.fromisoformat(params.get('to')) if params.get('to') else today
+        start = date.fromisoformat(params.get('from')) if params.get('from') else end.replace(day=1)
+    except ValueError:
+        raise ValidationError({'detail': 'Use YYYY-MM-DD for the dates.'}) from None
+    if start > end:
+        raise ValidationError({'detail': 'The start date is after the end date.'})
+    if (end - start).days >= MAX_REPORT_DAYS:
+        raise ValidationError({'detail': f'Pick a period of at most {MAX_REPORT_DAYS} days.'})
+    return start, end
+
+
+class AdminReportView(APIView):
+    """Money, visits, medicines and tests over a period, for the Reports tab.
+
+    Billed counts bills raised in the period; collected counts payments received in it,
+    whenever their bill was raised. Dates are the clinic's own (TIME_ZONE).
+    """
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    @extend_schema(responses=dict)
+    def get(self, request):
+        start, end = _report_period(request.query_params)
+        bills = Bill.objects.filter(created_at__date__gte=start, created_at__date__lte=end)
+        payments = Payment.objects.filter(received_at__date__gte=start, received_at__date__lte=end)
+        visits = Appointment.objects.filter(appointment_date__date__gte=start, appointment_date__date__lte=end)
+        zero = Decimal('0')
+
+        def money(value):
+            return value if value is not None else zero
+
+        daily = {}
+        for row in bills.annotate(day=TruncDate('created_at')).values('day').annotate(
+                billed=Sum(BILL_TOTAL), bills=Count('id')).order_by():
+            daily.setdefault(row['day'], {}).update(billed=row['billed'], bills=row['bills'])
+        for row in payments.annotate(day=TruncDate('received_at')).values('day').annotate(
+                collected=Sum('amount')).order_by():
+            daily.setdefault(row['day'], {})['collected'] = row['collected']
+        for row in visits.annotate(day=TruncDate('appointment_date')).values('day').annotate(
+                visits=Count('id', filter=Q(status='completed'))).order_by():
+            daily.setdefault(row['day'], {})['visits'] = row['visits']
+
+        doctors = []
+        for doctor in Doctor.objects.select_related('user').order_by('user__first_name'):
+            counts = visits.filter(doctor=doctor).aggregate(
+                appointments=Count('id'), completed=Count('id', filter=Q(status='completed')),
+                cancelled=Count('id', filter=Q(status='cancelled')))
+            if not counts['appointments']:
+                continue
+            billed = bills.filter(appointment__doctor=doctor).aggregate(total=Sum(BILL_TOTAL))['total']
+            doctors.append({'doctor': str(doctor), 'specialization': doctor.specialization,
+                            **counts, 'billed': money(billed)})
+
+        totals = bills.aggregate(billed=Sum(BILL_TOTAL), discount=Sum('discount'), tax=Sum('tax'))
+        tests = TestOrder.objects.filter(ordered_at__date__gte=start, ordered_at__date__lte=end)
+        return Response({
+            'from': start,
+            'to': end,
+            'totals': {
+                'billed': money(totals['billed']),
+                'collected': money(payments.aggregate(total=Sum('amount'))['total']),
+                'discounts': money(totals['discount']),
+                'tax': money(totals['tax']),
+                'bills': bills.count(),
+                'unpaid_bills': bills.filter(paid=False).count(),
+                'appointments': visits.count(),
+                'completed_visits': visits.filter(status='completed').count(),
+                'cancelled_visits': visits.filter(status='cancelled').count(),
+                'patients_seen': visits.filter(status='completed').values('patient').distinct().count(),
+                'tests_ordered': tests.count(),
+            },
+            'daily': [
+                {'date': day, 'billed': money(row.get('billed')), 'collected': money(row.get('collected')),
+                 'bills': row.get('bills', 0), 'visits': row.get('visits', 0)}
+                for day, row in sorted(daily.items())
+            ],
+            'by_service': list(
+                BillItem.objects.filter(bill__in=bills).values('service_type')
+                .annotate(total=Sum(LINE_TOTAL), lines=Count('id')).order_by('-total')),
+            'by_payment_method': list(
+                payments.values('method').annotate(total=Sum('amount'), payments=Count('id')).order_by('-total')),
+            'by_doctor': doctors,
+            'appointments_by_status': list(visits.values('status').annotate(count=Count('id')).order_by('-count')),
+            'top_medicines': list(
+                PrescriptionMedicine.objects.filter(
+                    prescription__created_at__date__gte=start, prescription__created_at__date__lte=end)
+                .values(name=F('medicine__name'))
+                .annotate(quantity=Sum('quantity'), prescriptions=Count('prescription', distinct=True))
+                .order_by('-quantity')[:10]),
+            'top_tests': list(
+                tests.values(name=F('test__name')).annotate(orders=Count('id')).order_by('-orders')[:10]),
+        })

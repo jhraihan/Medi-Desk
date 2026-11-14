@@ -32,9 +32,9 @@ import AdminStock from "./pages/admin/Stock";
 import AdminAuditLog from "./pages/admin/AuditLog";
 import AdminLabTests from "./pages/admin/LabTestCatalog";
 import AdminHospital from "./pages/admin/Hospital";
+import AdminReports from "./pages/admin/Reports";
+import { rolesFor } from "./navigation.js";
 
-const STAFF = ["admin", "receptionist"];
-const CLINICAL = ["admin", "doctor"];
 
 function NotFound() {
   return (
@@ -74,48 +74,29 @@ function App() {
               <Route path="/print/lab/:id" element={<PrintLabReport />} />
 
               <Route element={<Layout />}>
-                <Route element={<RoleRoute allow={["admin", "receptionist", "doctor", "patient"]} />}>
-                  <Route path="/appointments" element={<Appointments />} />
-                </Route>
-                <Route element={<RoleRoute allow={["admin", "doctor", "patient", "pharmacist"]} />}>
-                  <Route path="/prescriptions" element={<Prescriptions />} />
-                </Route>
-                <Route path="/doctors" element={<Doctors />} />
-
-                <Route element={<RoleRoute allow={[...STAFF, "doctor"]} />}>
-                  <Route path="/patients" element={<Patients />} />
-                </Route>
-
-                <Route element={<RoleRoute allow={[...CLINICAL, "receptionist", "pharmacist"]} />}>
-                  <Route path="/medicines" element={<Medicines />} />
-                </Route>
-
-                <Route element={<RoleRoute allow={[...STAFF, "patient", "doctor"]} />}>
-                  <Route path="/billing" element={<Billing />} />
-                </Route>
-
-                <Route element={<RoleRoute allow={[...STAFF, "doctor", "patient"]} />}>
-                  <Route path="/lab-tests" element={<LabTests />} />
-                </Route>
-
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/my-queue" element={<MyQueue />} />
-                <Route path="/blood" element={<BloodDonation />} />
-
-                <Route element={<RoleRoute allow={["patient"]} />}>
-                  <Route path="/reminders" element={<Reminders />} />
-                </Route>
-
-                <Route element={<RoleRoute allow={["patient", "doctor", "admin"]} />}>
-                  <Route path="/records" element={<Records />} />
-                </Route>
-
-                <Route element={<RoleRoute allow={[...STAFF, "doctor"]} />}>
-                  <Route path="/queue" element={<Queue />} />
-                </Route>
+                {[
+                  ["/queue", <Queue />],
+                  ["/my-queue", <MyQueue />],
+                  ["/appointments", <Appointments />],
+                  ["/patients", <Patients />],
+                  ["/doctors", <Doctors />],
+                  ["/prescriptions", <Prescriptions />],
+                  ["/lab-tests", <LabTests />],
+                  ["/records", <Records />],
+                  ["/medicines", <Medicines />],
+                  ["/stock", <AdminStock />],
+                  ["/billing", <Billing />],
+                  ["/reminders", <Reminders />],
+                  ["/blood", <BloodDonation />],
+                ].map(([path, page]) => (
+                  <Route key={path} element={<RoleRoute allow={rolesFor(path)} />}>
+                    <Route path={path} element={page} />
+                  </Route>
+                ))}
 
                 {/* The API enforces the same rule; this only spares other roles a page of 403s. */}
-                <Route element={<RoleRoute allow={["admin"]} />}>
+                <Route element={<RoleRoute allow={rolesFor("/admin")} />}>
                   <Route path="/admin" element={<AdminLayout />}>
                     <Route index element={<AdminOverview />} />
                     <Route path="users" element={<AdminUsers />} />
@@ -123,14 +104,12 @@ function App() {
                     <Route path="schedules" element={<AdminSchedules />} />
                     <Route path="stock" element={<AdminStock />} />
                     <Route path="lab-tests" element={<AdminLabTests />} />
+                    <Route path="reports" element={<AdminReports />} />
                     <Route path="hospital" element={<AdminHospital />} />
                     <Route path="audit" element={<AdminAuditLog />} />
                   </Route>
                 </Route>
 
-                <Route element={<RoleRoute allow={["pharmacist"]} />}>
-                  <Route path="/stock" element={<AdminStock />} />
-                </Route>
                 <Route index element={<Navigate to="/dashboard" replace />} />
               </Route>
             </Route>
