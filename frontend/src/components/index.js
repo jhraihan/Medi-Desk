@@ -4,6 +4,7 @@ export { default as Button } from "./Button.jsx";
 export { default as Card } from "./Card.jsx";
 export { default as Chips } from "./Chips.jsx";
 export { default as ConfirmDialog } from "./ConfirmDialog.jsx";
+export { default as DownloadPdfButton } from "./DownloadPdfButton.jsx";
 export { default as EmptyState } from "./EmptyState.jsx";
 export { default as IconButton } from "./IconButton.jsx";
 export { default as Loading } from "./Loading.jsx";

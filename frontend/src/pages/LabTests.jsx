@@ -14,6 +14,7 @@ import {
   Card,
   Chips,
   ConfirmDialog,
+  DownloadPdfButton,
   Input,
   Modal,
   PageHeader,
@@ -159,9 +160,15 @@ export default function LabTests() {
                   </Button>
                 )}
                 {order.status === "completed" && (
-                  <Button size="sm" variant="ghost" onClick={() => openPrintable(`/print/lab/${order.id}`)}>
-                    <Printer size={13} /> Report
-                  </Button>
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => openPrintable(`/print/lab/${order.id}`)}>
+                      <Printer size={13} /> Report
+                    </Button>
+                    <DownloadPdfButton
+                      path={`test-orders/${order.id}/pdf/`}
+                      filename={`lab-report-${String(order.id).padStart(6, "0")}.pdf`}
+                    />
+                  </>
                 )}
                 {canRecord && order.status === "ordered" && (
                   <Button size="sm" variant="danger-ghost" onClick={() => setCancelling(order)}>

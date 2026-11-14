@@ -28,6 +28,7 @@ export default function PrintBill() {
       title="Invoice"
       ready={Boolean(bill)}
       error={error}
+      pdf={bill && { path: `bills/${bill.id}/pdf/`, filename: `invoice-${bill.invoice_number}.pdf` }}
       meta={
         bill && (
           <div className="text-xs text-slate-600">

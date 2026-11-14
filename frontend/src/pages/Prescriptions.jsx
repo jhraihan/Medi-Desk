@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { BellRing, ChevronDown, FilePlus2, FlaskConical, Pill, Plus, Printer, Receipt, Trash2 } from "lucide-react";
+import { BellRing, ChevronDown, FilePlus2, FlaskConical, Pencil, Pill, Plus, Printer, Receipt, Trash2 } from "lucide-react";
 import {
   appointmentsApi,
   dispensePrescription,
@@ -21,6 +21,7 @@ import {
   Card,
   Chips,
   ConfirmDialog,
+  DownloadPdfButton,
   IconButton,
   Input,
   Modal,
@@ -237,9 +238,18 @@ export default function Prescriptions() {
                     >
                       <Printer size={13} /> Print
                     </Button>
+                    <DownloadPdfButton
+                      path={`prescriptions/${prescription.id}/pdf/`}
+                      filename={`prescription-RX${String(prescription.id).padStart(6, "0")}.pdf`}
+                    />
                     {canSeeBills && prescription.bill_id && (
                       <Button size="sm" variant="ghost" onClick={() => openPrintable(`/print/bill/${prescription.bill_id}`)}>
                         <Receipt size={13} /> Bill
+                      </Button>
+                    )}
+                    {canPrescribe && prescription.status !== "dispensed" && (
+                      <Button size="sm" variant="ghost" onClick={() => setWriting({ existing: prescription })}>
+                        <Pencil size={13} /> Edit
                       </Button>
                     )}
                     {canDispense && prescription.status === "issued" && (
@@ -278,10 +288,16 @@ export default function Prescriptions() {
       {writing && (
         <PrescribeModal
           appointmentId={writing.appointment}
+          existing={writing.existing}
           onClose={() => setWriting(null)}
           onSaved={(prescription) => {
+            const updated = Boolean(writing.existing);
             setWriting(null);
-            toast.success("Prescription issued and added to the patient's bill.");
+            toast.success(
+              updated
+                ? "Prescription updated. The bill now matches it."
+                : "Prescription issued and added to the patient's bill.",
+            );
             setJustIssued(prescription);
             reload();
           }}
@@ -413,13 +429,49 @@ function PrescriptionDetail({ prescription }) {
   );
 }
 
-function PrescribeModal({ appointmentId, onClose, onSaved }) {
-  const [appointment, setAppointment] = useState(null);
-  const [diagnosis, setDiagnosis] = useState("");
-  const [notes, setNotes] = useState("");
-  const [followUp, setFollowUp] = useState("");
-  const [items, setItems] = useState(() => [blankItem()]);
-  const [tests, setTests] = useState([]);
+// The options the pickers show, rebuilt from what a saved prescription returns.
+function itemsFrom(prescription) {
+  return (prescription.prescription_medicines ?? []).map((item) => ({
+    key: nextKey++,
+    medicine: {
+      value: item.medicine,
+      label: item.medicine_name,
+      hint: item.generic_name,
+      price: item.unit_price,
+      unit: item.medicine_unit,
+    },
+    dosage: item.dosage ?? "",
+    frequency: item.frequency ?? "",
+    duration: item.duration ?? "",
+    instructions: item.instructions ?? "",
+    quantity: String(item.quantity ?? 1),
+  }));
+}
+
+// Tests still waiting can be changed; ones with a result stay on record as they are.
+function testsFrom(prescription) {
+  return (prescription.test_orders ?? [])
+    .filter((order) => order.status === "ordered")
+    .map((order) => ({
+      key: nextKey++,
+      test: { value: order.test, label: order.test_name, price: order.price },
+      instructions: order.instructions ?? "",
+    }));
+}
+
+function PrescribeModal({ appointmentId, existing, onClose, onSaved }) {
+  const editing = Boolean(existing);
+  const [appointment, setAppointment] = useState(() =>
+    existing
+      ? { value: existing.appointment, label: existing.patient_name, hint: formatDateTime(existing.appointment_date) }
+      : null,
+  );
+  const [diagnosis, setDiagnosis] = useState(existing?.diagnosis ?? "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [followUp, setFollowUp] = useState(existing?.follow_up_date ?? "");
+  const [items, setItems] = useState(() => (existing ? itemsFrom(existing) : [blankItem()]));
+  const [tests, setTests] = useState(() => (existing ? testsFrom(existing) : []));
+  const reported = (existing?.test_orders ?? []).filter((order) => order.status === "completed");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -460,7 +512,8 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
 
     setIsSaving(true);
     try {
-      const saved = await prescriptionsApi.create({
+      const save = editing ? (payload) => prescriptionsApi.patch(existing.id, payload) : prescriptionsApi.create;
+      const saved = await save({
         appointment: appointment.value,
         diagnosis,
         notes,
@@ -487,7 +540,8 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
     <Modal
       open
       size="xl"
-      title="Write a prescription"
+      title={editing ? `Edit prescription · ${existing.patient_name}` : "Write a prescription"}
+      subtitle={editing ? "Add or change medicines and tests. The patient's bill follows the changes." : undefined}
       error={error}
       busy={isSaving}
       onClose={onClose}
@@ -498,21 +552,28 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
             Cancel
           </Button>
           <Button type="submit" busy={isSaving}>
-            {isSaving ? "Issuing…" : "Issue prescription"}
+            {isSaving ? "Saving…" : editing ? "Save changes" : "Issue prescription"}
           </Button>
         </>
       }
     >
       <div className="space-y-4">
-        <SearchPicker
-          label="Visit"
-          required
-          placeholder="Type the patient's name…"
-          hint="Visits that already have a prescription aren't listed."
-          value={appointment}
-          onChange={setAppointment}
-          search={searchPrescribableAppointments}
-        />
+        {editing ? (
+          <div className="rounded-xl bg-brand-50/70 px-4 py-3 text-sm">
+            <p className="font-medium text-ink-900">{existing.patient_name}</p>
+            <p className="text-ink-500">Visit {formatDateTime(existing.appointment_date)}</p>
+          </div>
+        ) : (
+          <SearchPicker
+            label="Visit"
+            required
+            placeholder="Type the patient's name…"
+            hint="Visits that already have a prescription aren't listed."
+            value={appointment}
+            onChange={setAppointment}
+            search={searchPrescribableAppointments}
+          />
+        )}
 
         <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
           <Textarea label="Diagnosis" required rows={2} value={diagnosis} onChange={(event) => setDiagnosis(event.target.value)} />
@@ -601,7 +662,17 @@ function PrescribeModal({ appointmentId, onClose, onSaved }) {
 
         <fieldset className="rounded-2xl border border-brand-100 p-4">
           <legend className="px-1 text-sm font-semibold text-ink-900">Tests</legend>
-          {tests.length === 0 && <p className="text-sm text-ink-500">No tests ordered.</p>}
+          {reported.length > 0 && (
+            <ul className="mb-3 space-y-1 text-sm">
+              {reported.map((order) => (
+                <li key={order.id} className="flex items-center justify-between gap-2 rounded-lg bg-emerald-50 px-3 py-2">
+                  <span className="font-medium text-ink-900">{order.test_name}</span>
+                  <span className="text-xs text-emerald-700">Result ready · kept on record</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {tests.length === 0 && <p className="text-sm text-ink-500">No tests waiting to be done.</p>}
           <div className="space-y-3">
             {tests.map((row) => (
               <div key={row.key} className="grid items-end gap-3 rounded-xl bg-brand-50/50 p-3 md:grid-cols-[3fr_3fr_auto]">

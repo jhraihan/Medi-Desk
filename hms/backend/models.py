@@ -63,6 +63,8 @@ class Doctor(models.Model):
     specialization = models.CharField(max_length=255)
     license_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
     qualification = models.CharField(max_length=255, blank=True)
+    # Printed under the doctor's name on prescriptions, e.g. "Senior Consultant".
+    designation = models.CharField(max_length=120, blank=True)
     consultation_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     slot_duration_minutes = models.PositiveIntegerField(default=30)
     phone = models.CharField(max_length=20, validators=[PHONE_VALIDATOR])

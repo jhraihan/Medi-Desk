@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   Chips,
+  DownloadPdfButton,
   IconButton,
   Input,
   Modal,
@@ -184,6 +185,7 @@ export default function Billing() {
                   <Button size="sm" variant="ghost" onClick={() => openPrintable(`/print/bill/${bill.id}`)}>
                     <Printer size={13} /> Print
                   </Button>
+                  <DownloadPdfButton path={`bills/${bill.id}/pdf/`} filename={`invoice-${bill.invoice_number}.pdf`} />
                 </div>
               </td>
             </tr>
@@ -487,6 +489,13 @@ function BillItemsModal({ bill, canEdit, onClose, onChanged }) {
               Add to bill
             </Button>
           )}
+          <DownloadPdfButton
+            path={`bills/${bill.id}/pdf/`}
+            filename={`invoice-${bill.invoice_number}.pdf`}
+            label="PDF"
+            variant="secondary"
+            size="md"
+          />
           <Button variant="secondary" onClick={() => openPrintable(`/print/bill/${bill.id}`)}>
             <Printer size={14} /> Print
           </Button>

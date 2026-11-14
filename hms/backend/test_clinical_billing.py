@@ -220,3 +220,57 @@ class CatalogueAndClinicTests(APITestCase):
         response = self.client.get('/api/v1/clinic/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['name'], 'Test Hospital')
+
+
+class DownloadablePdfTests(VisitFixture):
+    def setUp(self):
+        super().setUp()
+        self.doctor.designation = 'Senior Consultant'
+        self.doctor.save()
+        self.rx = self.prescribe(notes='Plenty of fluids').data
+
+    def test_prescription_pdf_downloads_for_its_doctor_and_patient(self):
+        for user in (self.doctor_user, self.patient_user):
+            self.client.force_authenticate(user)
+            response = self.client.get(f'/api/v1/prescriptions/{self.rx["id"]}/pdf/')
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response['Content-Type'], 'application/pdf')
+            self.assertIn(f'prescription-RX{self.rx["id"]:06d}.pdf', response['Content-Disposition'])
+            self.assertTrue(response.content.startswith(b'%PDF'))
+
+        self.client.force_authenticate(self.other_doctor_user)
+        self.assertEqual(self.client.get(f'/api/v1/prescriptions/{self.rx["id"]}/pdf/').status_code, 404)
+
+    def test_designation_is_on_the_prescription(self):
+        self.assertEqual(self.rx['doctor_designation'], 'Senior Consultant')
+
+    def test_invoice_pdf_downloads_for_staff_and_its_patient_only(self):
+        bill = self.bill()
+        for user in (self.desk, self.patient_user, self.doctor_user):
+            self.client.force_authenticate(user)
+            response = self.client.get(f'/api/v1/bills/{bill.id}/pdf/')
+            self.assertEqual(response.status_code, 200, user.username)
+            self.assertIn(f'invoice-{bill.invoice_number}.pdf', response['Content-Disposition'])
+
+        stranger = make_user('pdfstranger', User.Role.PATIENT)
+        Patient.objects.create(user=stranger, gender='male', address='x', phone='0100000109')
+        self.client.force_authenticate(stranger)
+        self.assertEqual(self.client.get(f'/api/v1/bills/{bill.id}/pdf/').status_code, 404)
+
+    def test_lab_report_pdf_downloads(self):
+        order = TestOrder.objects.get()
+        order.status, order.result = 'completed', 'Normal counts.'
+        order.save()
+        self.client.force_authenticate(self.patient_user)
+        response = self.client.get(f'/api/v1/test-orders/{order.id}/pdf/')
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.content.startswith(b'%PDF'))
+
+    def test_editing_adds_a_medicine_and_the_bill_follows(self):
+        self.client.force_authenticate(self.doctor_user)
+        extra = Medicine.objects.create(name='Omeprazole 20 mg', unit='capsule', unit_price=Decimal('5.00'))
+        self.client.patch(f'/api/v1/prescriptions/{self.rx["id"]}/', {'medicines': [
+            {'medicine': self.paracetamol.id, 'dosage': '1 tablet', 'duration': '5 days', 'quantity': 15},
+            {'medicine': extra.id, 'dosage': '1 capsule', 'duration': '14 days', 'quantity': 14},
+        ]}, format='json')
+        self.assertTrue(self.bill().items.filter(description__startswith='Omeprazole', quantity=14).exists())
