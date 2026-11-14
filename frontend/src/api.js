@@ -363,6 +363,7 @@ export async function removeBillItem(billId, itemId) {
 }
 
 // Name and contact details for printed letterheads. Public, and fetched once.
+// Admins edit them in Admin -> Hospital details, which drops this copy.
 let clinicDetails = null;
 export async function fetchClinic() {
   if (!clinicDetails) clinicDetails = API.get("clinic/").then((response) => response.data);
@@ -400,6 +401,21 @@ export const doctorSchedulesApi = createCrudApi("doctor-schedules");
 // Admin section. Every endpoint below answers 403 for any role but admin.
 export const adminUsersApi = createCrudApi("admin/users");
 export const auditLogsApi = createCrudApi("admin/audit-logs");
+
+// The Django admin, for the rare record the React screens do not cover.
+export const DJANGO_ADMIN_URL =
+  import.meta.env.VITE_DJANGO_ADMIN_URL ?? new URL("/admin/", API.defaults.baseURL).href;
+
+export async function fetchHospitalDetails() {
+  const response = await API.get("admin/hospital/");
+  return response.data;
+}
+
+export async function saveHospitalDetails(details) {
+  const response = await API.put("admin/hospital/", details);
+  clinicDetails = null;
+  return response.data;
+}
 
 export async function fetchAdminOverview() {
   const response = await API.get("admin/overview/");

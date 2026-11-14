@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   Card,
+  DeleteRecordButton,
   Modal,
   PageHeader,
   Pager,
@@ -172,6 +173,21 @@ export default function Patients() {
                 >
                   <CalendarPlus size={15} /> Book a visit
                 </Link>
+              )}
+              {user?.role === "admin" && (
+                <DeleteRecordButton
+                  size="md"
+                  className="mr-auto"
+                  label="Delete patient"
+                  title={`Delete ${fullName(viewing.user_details, "this patient")}?`}
+                  message="Every appointment, prescription, test result, bill and document of this patient is deleted with them. Their sign-in account stays; deactivate it under Admin, Users & roles. This cannot be undone."
+                  success="Patient deleted."
+                  onDelete={() => patientsApi.remove(viewing.id)}
+                  onDeleted={() => {
+                    setViewing(null);
+                    reload();
+                  }}
+                />
               )}
               {mayEdit && (
                 <Button

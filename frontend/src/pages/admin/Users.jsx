@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { KeyRound, Pencil, Plus } from "lucide-react";
 import {
   adminUsersApi,
@@ -67,10 +68,12 @@ const EMPTY_PATIENT = { gender: "", date_of_birth: "", blood_group: "", phone: "
 
 export default function Users() {
   const { user: me } = useAuth();
+  // The Doctors page links here as ?new=doctor (add one) and ?search=<username> (their account).
+  const [params, setParams] = useSearchParams();
 
   const [page, setPage] = useState(1);
   const [data, setData] = useState({ count: 0, results: [] });
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(() => params.get("search") ?? "");
   const [roleFilter, setRoleFilter] = useState("");
   const [activeFilter, setActiveFilter] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -80,8 +83,11 @@ export default function Users() {
   const [departments, setDepartments] = useState([]);
 
   // editing: null = form closed, {} = new account, a user row = editing that account
-  const [editing, setEditing] = useState(null);
-  const [account, setAccount] = useState(EMPTY_ACCOUNT);
+  const [editing, setEditing] = useState(() => (params.get("new") ? {} : null));
+  const [account, setAccount] = useState(() => {
+    const role = params.get("new");
+    return ROLES.some((option) => option.value === role) ? { ...EMPTY_ACCOUNT, role } : EMPTY_ACCOUNT;
+  });
   const [doctor, setDoctor] = useState(EMPTY_DOCTOR);
   const [patient, setPatient] = useState(EMPTY_PATIENT);
   const [isSaving, setIsSaving] = useState(false);
@@ -123,6 +129,20 @@ export default function Users() {
   useEffect(() => {
     departmentsApi.listAll().then(setDepartments).catch(() => setDepartments([]));
   }, []);
+
+  // The shortcut has done its job once the form is open; a refresh should not reopen it.
+  useEffect(() => {
+    if (params.has("new") || params.has("search")) {
+      setParams(
+        (current) => {
+          current.delete("new");
+          current.delete("search");
+          return current;
+        },
+        { replace: true },
+      );
+    }
+  }, [params, setParams]);
 
   function filterBy(setter) {
     return (event) => {

@@ -26,6 +26,7 @@ from .models import (
     Doctor,
     DoctorSchedule,
     DocumentShare,
+    HospitalProfile,
     LabTest,
     MedicalDocument,
     MedicationSchedule,
@@ -40,7 +41,7 @@ from .models import (
 
 AUDITED_MODELS = [
     Appointment, Bill, BillItem, BloodRequest, CareContact, Department, Doctor,
-    DoctorSchedule, DocumentShare, LabTest, MedicalDocument, MedicationSchedule, Medicine,
+    DoctorSchedule, DocumentShare, HospitalProfile, LabTest, MedicalDocument, MedicationSchedule, Medicine,
     MedicineStock, Patient, Payment, Prescription, TestOrder, User,
 ]
 

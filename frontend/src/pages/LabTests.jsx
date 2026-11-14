@@ -14,6 +14,7 @@ import {
   Card,
   Chips,
   ConfirmDialog,
+  DeleteRecordButton,
   DownloadPdfButton,
   Input,
   Modal,
@@ -174,6 +175,15 @@ export default function LabTests() {
                   <Button size="sm" variant="danger-ghost" onClick={() => setCancelling(order)}>
                     Cancel
                   </Button>
+                )}
+                {role === "admin" && (
+                  <DeleteRecordButton
+                    title={`Delete this ${order.test_name ?? "test"} order?`}
+                    message="The order and any result are removed, and the test comes off the visit bill unless it has a payment."
+                    success="Test order deleted."
+                    onDelete={() => testOrdersApi.remove(order.id)}
+                    onDeleted={reload}
+                  />
                 )}
               </div>
             </td>

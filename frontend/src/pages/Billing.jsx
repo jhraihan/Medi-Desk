@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { ListPlus, Plus, Printer, Trash2, Wallet } from "lucide-react";
+import { ListPlus, Pencil, Plus, Printer, Trash2, Wallet } from "lucide-react";
 import { addBillItem, billsApi, openPrintable, payBill, removeBillItem } from "../api.js";
 import { apiError } from "../errors.js";
 import { useAuth } from "../auth-context.js";
@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   Chips,
+  DeleteRecordButton,
   DownloadPdfButton,
   IconButton,
   Input,
@@ -186,6 +187,19 @@ export default function Billing() {
                     <Printer size={13} /> Print
                   </Button>
                   <DownloadPdfButton path={`bills/${bill.id}/pdf/`} filename={`invoice-${bill.invoice_number}.pdf`} />
+                  {user?.role === "admin" && (
+                    <DeleteRecordButton
+                      title={`Delete ${bill.invoice_number ?? "this bill"}?`}
+                      message={
+                        Number(bill.amount_paid) > 0
+                          ? `${money(bill.amount_paid)} has been paid on this bill. Deleting it also deletes those payment records. This cannot be undone.`
+                          : "The bill and its lines are removed. This cannot be undone."
+                      }
+                      success="Bill deleted."
+                      onDelete={() => billsApi.remove(bill.id)}
+                      onDeleted={reload}
+                    />
+                  )}
                 </div>
               </td>
             </tr>
@@ -430,7 +444,29 @@ function BillItemsModal({ bill, canEdit, onClose, onChanged }) {
   const [adding, setAdding] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [error, setError] = useState("");
+  // null = closed, otherwise the VAT, discount and due date being edited
+  const [adjusting, setAdjusting] = useState(null);
   const items = bill.items ?? [];
+
+  async function saveAdjustment() {
+    setError("");
+    setBusyId("adjust");
+    try {
+      onChanged(
+        await billsApi.patch(bill.id, {
+          tax: adjusting.tax || "0",
+          discount: adjusting.discount || "0",
+          due_date: adjusting.due_date || null,
+        }),
+      );
+      toast.success("Bill totals updated.");
+      setAdjusting(null);
+    } catch (problem) {
+      setError(apiError(problem, "Could not update the bill."));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function remove(item) {
     setError("");
@@ -536,6 +572,54 @@ function BillItemsModal({ bill, canEdit, onClose, onChanged }) {
       {adding && (
         <div className="mt-4">
           <LineEditor line={adding} onChange={(changes) => setAdding((line) => ({ ...line, ...changes }))} onRemove={() => setAdding(null)} />
+        </div>
+      )}
+
+      {canEdit && !adjusting && (
+        <div className="mt-4 flex justify-end">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() =>
+              setAdjusting({ tax: bill.tax ?? "", discount: bill.discount ?? "", due_date: bill.due_date ?? "" })
+            }
+          >
+            <Pencil size={13} /> Change VAT, discount or due date
+          </Button>
+        </div>
+      )}
+      {adjusting && (
+        <div className="mt-4 grid gap-3 rounded-xl border border-brand-100 bg-white/70 p-4 sm:grid-cols-4 sm:items-end">
+          <Input
+            label="VAT / tax (৳)"
+            type="number"
+            min="0"
+            step="0.01"
+            value={adjusting.tax}
+            onChange={(event) => setAdjusting((current) => ({ ...current, tax: event.target.value }))}
+          />
+          <Input
+            label="Discount (৳)"
+            type="number"
+            min="0"
+            step="0.01"
+            value={adjusting.discount}
+            onChange={(event) => setAdjusting((current) => ({ ...current, discount: event.target.value }))}
+          />
+          <Input
+            label="Due date"
+            type="date"
+            value={adjusting.due_date}
+            onChange={(event) => setAdjusting((current) => ({ ...current, due_date: event.target.value }))}
+          />
+          <div className="flex gap-2">
+            <Button size="sm" busy={busyId === "adjust"} onClick={saveAdjustment}>
+              Save
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setAdjusting(null)} disabled={busyId === "adjust"}>
+              Cancel
+            </Button>
+          </div>
         </div>
       )}
 

@@ -1,7 +1,7 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarPlus, GraduationCap, Phone, Stethoscope } from "lucide-react";
-import { doctorsApi } from "../api.js";
+import { CalendarPlus, GraduationCap, Pencil, Phone, Stethoscope, UserCog, UserPlus } from "lucide-react";
+import { departmentsApi, doctorsApi } from "../api.js";
 import { apiError } from "../errors.js";
 import { useAuth } from "../auth-context.js";
 import { canWrite } from "../permissions.js";
@@ -9,7 +9,21 @@ import { money } from "../format.js";
 import { useDebounced, useLoader } from "../hooks.js";
 import { doctorLabel } from "../pickers.js";
 import { useToast } from "../toast-context.js";
-import { Alert, Badge, Card, Chips, EmptyState, Loading, PageHeader, Pager, SearchInput } from "../components/index.js";
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  Chips,
+  EmptyState,
+  Input,
+  Loading,
+  Modal,
+  PageHeader,
+  Pager,
+  SearchInput,
+  Select,
+} from "../components/index.js";
 
 const CLINIC_STATUS = {
   in_clinic: { label: "In clinic", tone: "success" },
@@ -34,6 +48,8 @@ export default function Doctors() {
   const [availability, setAvailability] = useState("");
   const [page, setPage] = useState(1);
   const [workingId, setWorkingId] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const isAdmin = user?.role === "admin";
 
   const settledSearch = useDebounced(search);
   const load = useCallback(() => {
@@ -68,6 +84,16 @@ export default function Doctors() {
         eyebrow="Care team"
         title="Doctors"
         subtitle={mayBook ? "Find the right doctor and book a visit." : "Who is on the team, and who is taking bookings."}
+        action={
+          isAdmin && (
+            <Link
+              to="/admin/users?new=doctor"
+              className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
+            >
+              <UserPlus size={15} /> Add doctor
+            </Link>
+          )
+        }
       />
 
       <Card className="animate-rise mb-5 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -170,6 +196,20 @@ export default function Doctors() {
                   </Link>
                 )}
                 {mayEdit && (
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(doctor)}>
+                    <Pencil size={13} /> Edit
+                  </Button>
+                )}
+                {isAdmin && doctor.user_details?.username && (
+                  <Link
+                    to={`/admin/users?search=${encodeURIComponent(doctor.user_details.username)}`}
+                    title="Name, email, sign-in and password"
+                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-ink-700 hover:bg-white/70"
+                  >
+                    <UserCog size={13} /> Account
+                  </Link>
+                )}
+                {mayEdit && (
                   <label className="ml-auto inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-ink-700">
                     <input
                       type="checkbox"
@@ -189,6 +229,100 @@ export default function Doctors() {
         })}
       </div>
       <Pager page={page} count={data?.count ?? 0} onChange={setPage} />
+
+      {editing && (
+        <DoctorProfileModal
+          doctor={editing}
+          onClose={() => setEditing(null)}
+          onSaved={(saved) => {
+            setEditing(null);
+            toast.success(`${doctorLabel(saved)} updated.`);
+            reload();
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+const PROFILE_FIELDS = ["department", "specialization", "designation", "qualification", "phone", "experience", "consultation_fee"];
+
+// Everything on the doctor's profile. Their name, email and sign-in live on the
+// account, under Admin -> Users & roles.
+function DoctorProfileModal({ doctor, onClose, onSaved }) {
+  const [form, setForm] = useState(() =>
+    Object.fromEntries(PROFILE_FIELDS.map((name) => [name, doctor[name] ?? ""])),
+  );
+  const [departments, setDepartments] = useState([]);
+  const [error, setError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    departmentsApi.listAll().then(setDepartments).catch(() => setDepartments([]));
+  }, []);
+
+  function field(name) {
+    return {
+      value: form[name] ?? "",
+      onChange: (event) => setForm((current) => ({ ...current, [name]: event.target.value })),
+    };
+  }
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setIsSaving(true);
+    try {
+      const saved = await doctorsApi.patch(doctor.id, {
+        ...form,
+        department: form.department ? Number(form.department) : null,
+        experience: Number(form.experience || 0),
+        consultation_fee: form.consultation_fee || "0",
+      });
+      onSaved(saved);
+    } catch (problem) {
+      setError(apiError(problem, "Could not save the doctor's profile."));
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <Modal
+      open
+      size="lg"
+      title={`Edit ${doctorLabel(doctor)}`}
+      subtitle="Shown to patients and printed on prescriptions. A new fee applies to visits billed from now on."
+      error={error}
+      busy={isSaving}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={isSaving}>
+            Cancel
+          </Button>
+          <Button type="submit" busy={isSaving}>
+            {isSaving ? "Saving..." : "Save changes"}
+          </Button>
+        </>
+      }
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Select label="Department" placeholder="No department" {...field("department")}>
+          {departments.map((department) => (
+            <option key={department.id} value={department.id}>
+              {department.name}
+            </option>
+          ))}
+        </Select>
+        <Input label="Specialization" required {...field("specialization")} />
+        <Input label="Designation" placeholder="Senior Consultant" {...field("designation")} />
+        <Input label="Qualification" placeholder="MBBS, FCPS" {...field("qualification")} />
+        <Input label="Phone" required {...field("phone")} />
+        <Input label="Years of experience" type="number" min="0" {...field("experience")} />
+        <Input label="Consultation fee (৳)" type="number" min="0" step="0.01" {...field("consultation_fee")} />
+      </div>
+    </Modal>
   );
 }

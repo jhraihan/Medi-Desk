@@ -266,6 +266,9 @@ body::before {
     margin: 0 !important;
     padding: 0 !important;
     max-width: none !important;
+    /* On screen the sheet is a full A4 page tall. On paper the @page margins already
+       take some of that height, so a full-height sheet would spill a blank second page. */
+    min-height: 0 !important;
   }
   .print-avoid-break {
     break-inside: avoid;

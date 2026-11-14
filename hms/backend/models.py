@@ -713,3 +713,45 @@ class CareContact(models.Model):
 
     def __str__(self):
         return f'{self.name} for {self.patient}'
+
+
+class HospitalProfile(models.Model):
+    """The hospital's own name and contact details, printed on every prescription,
+    invoice and lab report. There is only ever one row; admins edit it in place.
+
+    Until an admin saves it, the HOSPITAL_* environment settings provide the values.
+    """
+
+    name = models.CharField(max_length=150)
+    address = models.CharField(max_length=255, blank=True)
+    phone = models.CharField(max_length=50, blank=True)
+    email = models.EmailField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'hospital details'
+        verbose_name_plural = 'hospital details'
+
+    def __str__(self):
+        return self.name
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError('The hospital details can be edited but not deleted.')
+
+    @classmethod
+    def current(cls):
+        from django.conf import settings
+
+        defaults = {key: settings.HOSPITAL.get(key) or '' for key in ('name', 'address', 'phone', 'email')}
+        defaults['name'] = defaults['name'] or 'MediDesk'
+        profile, _ = cls.objects.get_or_create(pk=1, defaults=defaults)
+        return profile
+
+    @classmethod
+    def details(cls):
+        profile = cls.current()
+        return {'name': profile.name, 'address': profile.address, 'phone': profile.phone, 'email': profile.email}

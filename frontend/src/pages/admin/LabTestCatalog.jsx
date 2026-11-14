@@ -4,7 +4,7 @@ import { labTestsApi } from "../../api.js";
 import { apiError } from "../../errors.js";
 import { money } from "../../format.js";
 import { useToast } from "../../toast-context.js";
-import { Alert, Badge, Button, Input, Modal, Pager, Select, Table } from "../../components/index.js";
+import { Alert, Badge, Button, DeleteRecordButton, Input, Modal, Pager, Select, Table } from "../../components/index.js";
 
 const CATEGORIES = [
   { value: "blood", label: "Blood" },
@@ -165,6 +165,13 @@ export default function LabTestCatalog() {
                 <Button size="sm" variant="ghost" onClick={() => toggle(test)}>
                   {test.is_active ? "Retire" : "Offer again"}
                 </Button>
+                <DeleteRecordButton
+                  title={`Delete ${test.name}?`}
+                  message="Only a test that has never been ordered can be deleted. One with past orders is kept for its results; retire it instead."
+                  success={`${test.name} deleted.`}
+                  onDelete={() => labTestsApi.remove(test.id)}
+                  onDeleted={reload}
+                />
               </div>
             </td>
           </tr>

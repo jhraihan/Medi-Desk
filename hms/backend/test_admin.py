@@ -51,7 +51,8 @@ class DjangoAdminTests(APITestCase):
             if model._meta.app_label != 'backend':
                 continue
             info = (model._meta.app_label, model._meta.model_name)
-            changelist = self.client.get(reverse(f'admin:{info[0]}_{info[1]}_changelist'))
+            # follow: the hospital details list redirects straight to its one row.
+            changelist = self.client.get(reverse(f'admin:{info[0]}_{info[1]}_changelist'), follow=True)
             self.assertEqual(changelist.status_code, 200, model.__name__)
 
             if model_admin.has_add_permission(self._request()):
