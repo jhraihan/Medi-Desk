@@ -46,12 +46,14 @@ redeploy of the static site, not just a restart.
 
 ## 3. Create a superuser
 
-The build runs `migrate` but cannot create an interactive user. Open
-**`medidesk-api` → Shell** and run:
+Free Render instances have no Shell, so `build.sh` creates the first admin from three
+variables on `medidesk-api`: `DJANGO_SUPERUSER_USERNAME`, `DJANGO_SUPERUSER_EMAIL` and
+`DJANGO_SUPERUSER_PASSWORD`. Render asks for them when the Blueprint is applied. If you
+left them blank, add them under **Environment** and trigger **Manual Deploy**. Later
+deploys leave the account as it is.
 
-```bash
-cd hms && python manage.py createsuperuser
-```
+On a paid instance you can instead open **`medidesk-api` → Shell** and run
+`cd hms && python manage.py createsuperuser`.
 
 The Django admin is then at `https://<api-host>/admin/` (or at `ADMIN_URL`, below).
 Sign in to the React app with the same account and the **Admin** section appears in
@@ -59,13 +61,9 @@ the sidebar. Create every other staff account from there.
 
 ### Optional: demo data
 
-`render.yaml` turns demo mode on: `DEMO_MODE=True` on `medidesk-api` lets `seed_demo`
-run, and `VITE_DEMO_MODE=true` on `medidesk-web` puts a one-click sign-in button for each
-role on the login page. After the first deploy:
-
-```bash
-cd hms && python manage.py seed_demo
-```
+`render.yaml` turns demo mode on: with `DEMO_MODE=True` on `medidesk-api`, `build.sh` runs
+`seed_demo` on every deploy (it only adds what is missing), and `VITE_DEMO_MODE=true` on
+`medidesk-web` puts a one-click sign-in button for each role on the login page.
 
 This creates the demo accounts described in the README, about 45 medicines with prices and
 stock, 24 lab tests, and a few weeks of visits with prescriptions, results and bills.
@@ -106,7 +104,7 @@ checks the database (503 if it cannot reach it); point an uptime monitor at it.
 ### Before real patient data goes in
 
 1. Upgrade the database off the free plan and turn on daily backups. Free Render
-   databases are deleted after 90 days.
+   databases expire after 30 days and have no backups.
 2. Attach a persistent disk and set `MEDIA_ROOT`, or uploaded records are lost on deploy.
 3. Set `EMAIL_URL` so people can reset their own passwords.
 4. Remove `DEMO_MODE` and `VITE_DEMO_MODE`, and do not run `seed_demo`.
@@ -122,6 +120,9 @@ checks the database (503 if it cannot reach it); point an uptime monitor at it.
 3. `migrate`
 4. `createcachetable` — the table behind `CACHE_URL=dbcache://hms_cache`. It does
    nothing with other cache backends.
+5. `createsuperuser --no-input` when `DJANGO_SUPERUSER_USERNAME` and
+   `DJANGO_SUPERUSER_PASSWORD` are set.
+6. `seed_demo` when `DEMO_MODE=True`.
 
 Gunicorn then starts with 2 workers, bound to Render's `$PORT`.
 
@@ -137,8 +138,9 @@ probe arrives over plain HTTP and would otherwise receive a 301.
 the UI loads instantly and then appears to hang on its first API call. This is
 the single most common "is it broken?" report.
 
-**PostgreSQL expires after 90 days.** Render deletes free databases at that
-point. Back up first:
+**PostgreSQL expires after 30 days.** A free database stops 30 days after it is
+created; Render then gives 14 days to upgrade before deleting it. Free databases
+have no backups, so take your own before then:
 
 ```bash
 pg_dump "$DATABASE_URL" > medidesk-backup.sql
