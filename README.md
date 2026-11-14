@@ -67,8 +67,9 @@ sees it straight away and can print the report.
 qualification and registration number, ℞ list, tests, advice, signature line), invoices with
 a paid/unpaid stamp, and lab reports print on A4 from the browser and download as real PDF
 files, generated on the server with reportlab. A doctor can reopen a prescription to add
-medicines or tests until it is dispensed; the bill follows. The hospital name and address on the letterhead come from
-`HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_PHONE` and `HOSPITAL_EMAIL`.
+medicines or tests until it is dispensed; the bill follows. The hospital name, address, phone
+and email on the letterhead are edited in Admin → Hospital details. `HOSPITAL_NAME`,
+`HOSPITAL_ADDRESS`, `HOSPITAL_PHONE` and `HOSPITAL_EMAIL` only provide the starting values.
 
 **Auditing.** Every change to patient, billing, pharmacy and staff records, and every time a
 single patient record, prescription or document is opened, is written to an append-only log.
@@ -389,7 +390,7 @@ Full walkthrough, including the superuser step and troubleshooting:
 | `LOG_LEVEL` | no | Defaults to `INFO`. Logs go to stdout. |
 | `MEDIA_ROOT` | no | Where uploaded documents are stored. Point it at a persistent disk in production. |
 | `CONN_MAX_AGE` | no | Seconds to keep database connections open. Defaults to `60`. |
-| `HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_PHONE`, `HOSPITAL_EMAIL` | no | Letterhead on printed prescriptions, invoices and lab reports. |
+| `HOSPITAL_NAME`, `HOSPITAL_ADDRESS`, `HOSPITAL_PHONE`, `HOSPITAL_EMAIL` | no | Starting values for the letterhead on prescriptions, invoices and lab reports. After that, admins edit it in Admin → Hospital details. |
 
 `frontend/.env` — optional.
 

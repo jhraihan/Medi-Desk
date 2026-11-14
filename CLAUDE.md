@@ -145,12 +145,11 @@ The public `GET /api/v1/clinic/` returns it for the print pages.
 
 ## Status (2026-11-14)
 
-- Merged into `main`: PR #1 (printing, lab tests, itemised billing, demo logins), PR #2
-  (server PDFs, doctor designation, prescription editing), PR #3 (Render deploy fixes).
-- Not yet committed (waiting for "push", then PR #4):
-  - full admin control: doctor add/edit, medicine edit/retire/delete, admin deletes, bill
-    VAT/discount edits;
-  - `HospitalProfile` (migration 0015);
-  - the blank-second-page print fix;
-  - the `apiError` list fix.
+- Merged into `main`:
+  - PR #1: printing, lab tests, itemised billing, demo logins.
+  - PR #2: server PDFs, doctor designation, prescription editing.
+  - PR #3: Render deploy fixes.
+  - PR #4: full admin control (doctor add/edit, medicine edit/retire/delete, admin deletes,
+    bill VAT/discount edits), `HospitalProfile` (migration 0015), the blank-second-page
+    print fix, the `apiError` list fix, and this file.
 - Render deployment: not confirmed yet.
