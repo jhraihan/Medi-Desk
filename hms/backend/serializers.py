@@ -657,6 +657,9 @@ class BillSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({name: 'This cannot be negative.'})
         if discount > amount + tax:
             raise serializers.ValidationError({'discount': 'The discount is larger than the bill.'})
+        if self.instance is not None and amount + tax - discount < self.instance.amount_paid:
+            raise serializers.ValidationError(
+                {'discount': f'That would leave the bill below the {self.instance.amount_paid} already paid.'})
         return attrs
 
 class NotificationSerializer(serializers.ModelSerializer):

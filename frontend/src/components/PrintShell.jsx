@@ -36,7 +36,7 @@ export default function PrintShell({ title, meta, ready, error, pdf, children })
   }
 
   return (
-    <div className="min-h-screen bg-slate-200/70 py-6 print:bg-white print:py-0">
+    <div className="min-h-screen bg-slate-200/70 py-6 print:min-h-0 print:bg-white print:py-0">
       <div className="no-print mx-auto mb-4 flex max-w-[210mm] items-center justify-between gap-3 px-4">
         <Button variant="secondary" size="sm" onClick={goBack}>
           <ArrowLeft size={14} /> Back

@@ -36,6 +36,7 @@ from .models import (
     DocumentShare,
     Donor,
     DonorResponse,
+    HospitalProfile,
     LabTest,
     MedicalDocument,
     MedicationDose,
@@ -152,7 +153,7 @@ class ClinicView(APIView):
 
     @extend_schema(responses=dict)
     def get(self, request):
-        return Response(settings.HOSPITAL)
+        return Response(HospitalProfile.details())
 
 
 @extend_schema(responses=UserSerializer)
@@ -378,6 +379,11 @@ class PrescriptionViewSet(ScopedViewSet):
         prescription = serializer.save()
         sync_visit_bill(prescription.appointment)
 
+    def perform_destroy(self, instance):
+        appointment = instance.appointment
+        super().perform_destroy(instance)
+        sync_visit_bill(appointment)
+
     @extend_schema(responses={(200, 'application/pdf'): OpenApiTypes.BINARY})
     @action(detail=True, methods=['get'], url_path='pdf')
     def download_pdf(self, request, pk=None):
@@ -410,6 +416,16 @@ class MedicineViewSet(ScopedViewSet):
     search_fields = ['name', 'generic_name', 'description']
     ordering_fields = ['name']
 
+    def perform_destroy(self, instance):
+        # Deleting would silently strike it from every prescription that listed it.
+        used = instance.prescribed_in.count()
+        if used:
+            raise ValidationError(
+                f'{instance.name} is on {used} prescription{"" if used == 1 else "s"}, so deleting it would '
+                'change medical history. Retire it instead: it stays on old prescriptions but cannot be '
+                'prescribed again.')
+        super().perform_destroy(instance)
+
 
 class MedicineStockViewSet(ScopedViewSet):
     queryset = MedicineStock.objects.select_related('medicine')
@@ -427,6 +443,14 @@ class LabTestViewSet(ScopedViewSet):
     filterset_fields = ['category', 'is_active']
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'price']
+
+    def perform_destroy(self, instance):
+        used = instance.orders.count()
+        if used:
+            raise ValidationError(
+                f'{instance.name} has been ordered {used} time{"" if used == 1 else "s"}, so it cannot be '
+                'deleted. Deactivate it instead: past results keep it, new orders cannot use it.')
+        super().perform_destroy(instance)
 
 
 class TestOrderViewSet(ScopedViewSet):

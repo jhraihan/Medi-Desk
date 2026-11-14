@@ -31,6 +31,7 @@ import AdminSchedules from "./pages/admin/Schedules";
 import AdminStock from "./pages/admin/Stock";
 import AdminAuditLog from "./pages/admin/AuditLog";
 import AdminLabTests from "./pages/admin/LabTestCatalog";
+import AdminHospital from "./pages/admin/Hospital";
 
 const STAFF = ["admin", "receptionist"];
 const CLINICAL = ["admin", "doctor"];
@@ -122,6 +123,7 @@ function App() {
                     <Route path="schedules" element={<AdminSchedules />} />
                     <Route path="stock" element={<AdminStock />} />
                     <Route path="lab-tests" element={<AdminLabTests />} />
+                    <Route path="hospital" element={<AdminHospital />} />
                     <Route path="audit" element={<AdminAuditLog />} />
                   </Route>
                 </Route>

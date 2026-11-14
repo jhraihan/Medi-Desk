@@ -1,6 +1,6 @@
 """
-Admin-only endpoints behind the React admin section: accounts, the audit trail and
-a hospital-wide overview. Everything here requires the admin role.
+Admin-only endpoints behind the React admin section: accounts, the audit trail, the
+hospital's own details and a hospital-wide overview. Everything here requires the admin role.
 
 Accounts are deactivated rather than deleted. Deleting a user cascades into their
 patient or doctor profile and from there into appointments, prescriptions and bills.
@@ -33,6 +33,7 @@ from .models import (
     Department,
     Doctor,
     Donor,
+    HospitalProfile,
     Medicine,
     MedicineStock,
     Patient,
@@ -271,3 +272,34 @@ class AdminOverviewView(APIView):
                 AuditLog.objects.select_related('actor')[:8], many=True).data,
             'django_admin_url': request.build_absolute_uri(f'/{settings.ADMIN_URL}'),
         })
+
+
+class HospitalProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = HospitalProfile
+        fields = ['name', 'address', 'phone', 'email', 'updated_at']
+        read_only_fields = ['updated_at']
+
+
+class AdminHospitalView(APIView):
+    """The name and contact details on every printout. There is one row, edited in place."""
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    @extend_schema(responses=HospitalProfileSerializer)
+    def get(self, request):
+        return Response(HospitalProfileSerializer(HospitalProfile.current()).data)
+
+    @extend_schema(request=HospitalProfileSerializer, responses=HospitalProfileSerializer)
+    def put(self, request):
+        serializer = HospitalProfileSerializer(HospitalProfile.current(), data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @extend_schema(request=HospitalProfileSerializer, responses=HospitalProfileSerializer)
+    def patch(self, request):
+        serializer = HospitalProfileSerializer(HospitalProfile.current(), data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)

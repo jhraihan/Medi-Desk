@@ -16,6 +16,7 @@ import {
   Card,
   Chips,
   ConfirmDialog,
+  DeleteRecordButton,
   Input,
   Modal,
   PageHeader,
@@ -380,6 +381,15 @@ export default function Appointments() {
                     >
                       Cancel
                     </Button>
+                  )}
+                  {role === "admin" && (
+                    <DeleteRecordButton
+                      title="Delete this appointment?"
+                      message="This removes the visit together with its prescription and test orders. Its bill is kept. To call a visit off, cancel it instead."
+                      success="Appointment deleted."
+                      onDelete={() => appointmentsApi.remove(apt.id)}
+                      onDeleted={reload}
+                    />
                   )}
                 </div>
               </td>

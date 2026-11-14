@@ -7,6 +7,8 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Sum
 from django.http import HttpResponse
+from django.shortcuts import redirect
+from django.urls import reverse
 from django.utils import timezone
 
 from .admin_api import revoke_sessions
@@ -25,6 +27,7 @@ from .models import (
     DonationRecord,
     Donor,
     DonorResponse,
+    HospitalProfile,
     LabTest,
     MedicalDocument,
     MedicationDose,
@@ -404,6 +407,27 @@ class MedicineStockAdmin(HospitalAdmin):
     @admin.display(boolean=True, description='Reorder')
     def low(self, obj):
         return obj.needs_reorder
+
+
+# ---------------------------------------------------------------- hospital details
+
+@admin.register(HospitalProfile)
+class HospitalProfileAdmin(HospitalAdmin):
+    """The one row of letterhead details. Opening the list goes straight to it."""
+
+    list_display = ('name', 'phone', 'email', 'updated_at')
+    readonly_fields = ('updated_at',)
+    actions = None
+
+    def has_add_permission(self, request, *args):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def changelist_view(self, request, extra_context=None):
+        profile = HospitalProfile.current()
+        return redirect(reverse('admin:backend_hospitalprofile_change', args=[profile.pk]))
 
 
 # ---------------------------------------------------------------- lab tests

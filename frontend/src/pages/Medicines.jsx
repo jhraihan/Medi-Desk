@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { Plus } from "lucide-react";
+import { Archive, ArchiveRestore, Pencil, Plus } from "lucide-react";
 import { medicinesApi } from "../api.js";
 import { apiError } from "../errors.js";
 import { useAuth } from "../auth-context.js";
@@ -13,6 +13,7 @@ import {
   Button,
   Card,
   Chips,
+  DeleteRecordButton,
   Input,
   Modal,
   PageHeader,
@@ -48,7 +49,11 @@ export default function Medicines() {
   const [page, setPage] = useState(1);
 
   const [formOpen, setFormOpen] = useState(false);
+  // null = adding a medicine, otherwise the row being edited
+  const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(BLANK);
+  const [workingId, setWorkingId] = useState(null);
+  const isAdmin = user?.role === "admin";
   const [formError, setFormError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -69,10 +74,28 @@ export default function Medicines() {
     };
   }
 
-  function openForm() {
-    setForm(BLANK);
+  function openForm(medicine = null) {
+    setEditingId(medicine?.id ?? null);
+    setForm(medicine ? Object.fromEntries(Object.keys(BLANK).map((key) => [key, medicine[key] ?? BLANK[key]])) : BLANK);
     setFormError("");
     setFormOpen(true);
+  }
+
+  async function toggleActive(medicine) {
+    setWorkingId(medicine.id);
+    try {
+      await medicinesApi.patch(medicine.id, { is_active: !medicine.is_active });
+      toast.success(
+        medicine.is_active
+          ? `${medicine.name} retired. Doctors can no longer prescribe it.`
+          : `${medicine.name} is back in the catalogue.`,
+      );
+      reload();
+    } catch (problem) {
+      toast.error(apiError(problem, "Could not change that medicine."));
+    } finally {
+      setWorkingId(null);
+    }
   }
 
   async function handleSave(event) {
@@ -80,12 +103,18 @@ export default function Medicines() {
     setFormError("");
     setIsSaving(true);
     try {
-      await medicinesApi.create({ ...form, unit_price: form.unit_price || "0" });
-      toast.success(`${form.name} added to the catalogue.`);
+      const payload = { ...form, unit_price: form.unit_price || "0" };
+      if (editingId) {
+        await medicinesApi.patch(editingId, payload);
+        toast.success(`${form.name} updated. The new price applies to prescriptions billed from now on.`);
+      } else {
+        await medicinesApi.create(payload);
+        toast.success(`${form.name} added to the catalogue.`);
+      }
       setFormOpen(false);
       reload();
     } catch (problem) {
-      setFormError(apiError(problem, "Could not add that medicine."));
+      setFormError(apiError(problem, "Could not save that medicine."));
     } finally {
       setIsSaving(false);
     }
@@ -99,7 +128,7 @@ export default function Medicines() {
         subtitle="The catalogue doctors prescribe from."
         action={
           mayEdit && (
-            <Button onClick={openForm}>
+            <Button onClick={() => openForm()}>
               <Plus size={15} /> Add medicine
             </Button>
           )
@@ -154,9 +183,34 @@ export default function Medicines() {
               <p className="line-clamp-2">{medicine.description || "—"}</p>
             </td>
             <td className="px-4 py-3">
-              <div className="flex flex-wrap justify-end gap-1">
+              <div className="flex flex-wrap items-center justify-end gap-1">
                 {medicine.requires_prescription && <Badge tone="brand">Rx</Badge>}
                 {!medicine.is_active && <Badge>retired</Badge>}
+                {mayEdit && (
+                  <>
+                    <Button size="sm" variant="ghost" onClick={() => openForm(medicine)}>
+                      <Pencil size={13} /> Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={workingId === medicine.id}
+                      onClick={() => toggleActive(medicine)}
+                    >
+                      {medicine.is_active ? <Archive size={13} /> : <ArchiveRestore size={13} />}
+                      {medicine.is_active ? "Retire" : "Restore"}
+                    </Button>
+                  </>
+                )}
+                {isAdmin && (
+                  <DeleteRecordButton
+                    title={`Delete ${medicine.name}?`}
+                    message="Only a medicine that has never been prescribed can be deleted. One on past prescriptions is kept for the record; retire it instead."
+                    success={`${medicine.name} deleted.`}
+                    onDelete={() => medicinesApi.remove(medicine.id)}
+                    onDeleted={reload}
+                  />
+                )}
               </div>
             </td>
           </tr>
@@ -167,7 +221,7 @@ export default function Medicines() {
       <Modal
         open={formOpen}
         size="lg"
-        title="Add a medicine"
+        title={editingId ? `Edit ${form.name || "medicine"}` : "Add a medicine"}
         error={formError}
         busy={isSaving}
         onClose={() => setFormOpen(false)}
@@ -178,7 +232,7 @@ export default function Medicines() {
               Cancel
             </Button>
             <Button type="submit" busy={isSaving}>
-              {isSaving ? "Saving…" : "Add medicine"}
+              {isSaving ? "Saving…" : editingId ? "Save changes" : "Add medicine"}
             </Button>
           </>
         }

@@ -21,6 +21,7 @@ import {
   Card,
   Chips,
   ConfirmDialog,
+  DeleteRecordButton,
   DownloadPdfButton,
   IconButton,
   Input,
@@ -256,6 +257,15 @@ export default function Prescriptions() {
                       <Button size="sm" onClick={() => setDispensing(prescription)}>
                         Dispense
                       </Button>
+                    )}
+                    {role === "admin" && (
+                      <DeleteRecordButton
+                        title={`Delete prescription RX${String(prescription.id).padStart(6, "0")}?`}
+                        message="Its medicines come off the visit bill unless that bill already has a payment. Test orders stay. This cannot be undone."
+                        success="Prescription deleted."
+                        onDelete={() => prescriptionsApi.remove(prescription.id)}
+                        onDeleted={reload}
+                      />
                     )}
                     {isPatient && items.length > 0 && (
                       <Button

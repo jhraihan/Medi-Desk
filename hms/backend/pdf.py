@@ -11,7 +11,6 @@ from decimal import Decimal
 from io import BytesIO
 from xml.sax.saxutils import escape
 
-from django.conf import settings
 from django.utils import timezone
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
@@ -19,6 +18,8 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+from .models import HospitalProfile
 
 TEAL = colors.HexColor('#0f766e')
 INK = colors.HexColor('#0f172a')
@@ -79,8 +80,7 @@ def age_sex(patient):
     return ' / '.join(part for part in parts if part)
 
 
-def _letterhead(title, meta):
-    hospital = settings.HOSPITAL
+def _letterhead(title, meta, hospital):
     left = [Paragraph(text(hospital.get('name')), HOSPITAL)]
     if hospital.get('address'):
         left.append(Paragraph(text(hospital['address']), SMALL))
@@ -105,17 +105,19 @@ def _footer(canvas, doc):
     canvas.setFont('Helvetica', 7.5)
     canvas.setFillColor(MUTED)
     printed = timezone.localtime().strftime('%d %b %Y, %I:%M %p')
-    canvas.drawString(16 * mm, 9 * mm, f'{settings.HOSPITAL.get("name")} · generated {printed}')
+    canvas.drawString(16 * mm, 9 * mm, f'{doc.hospital_name} · generated {printed}')
     canvas.drawRightString(A4[0] - 16 * mm, 9 * mm, f'Page {doc.page}')
     canvas.restoreState()
 
 
 def _build(title, meta, body, document_title):
     buffer = BytesIO()
+    hospital = HospitalProfile.details()
     doc = SimpleDocTemplate(
         buffer, pagesize=A4, leftMargin=16 * mm, rightMargin=16 * mm, topMargin=14 * mm,
-        bottomMargin=18 * mm, title=document_title, author=settings.HOSPITAL.get('name', 'MediDesk'))
-    doc.build([_letterhead(title, meta), Spacer(1, 6 * mm), *body], onFirstPage=_footer, onLaterPages=_footer)
+        bottomMargin=18 * mm, title=document_title, author=hospital['name'])
+    doc.hospital_name = hospital['name']
+    doc.build([_letterhead(title, meta, hospital), Spacer(1, 6 * mm), *body], onFirstPage=_footer, onLaterPages=_footer)
     return buffer.getvalue()
 
 
