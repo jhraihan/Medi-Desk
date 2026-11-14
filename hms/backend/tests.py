@@ -354,11 +354,11 @@ class DashboardTests(ScopingTests):
         self.client.force_authenticate(self.doctor_user)
         doctor_view = self.client.get('/api/v1/dashboard/')
         self.assertIn('today_appointments', doctor_view.data)
-        self.assertNotIn('revenue_this_month', doctor_view.data)
+        self.assertNotIn('collected_this_month', doctor_view.data)
 
         self.client.force_authenticate(make_user('boss4', User.Role.ADMIN))
         admin_view = self.client.get('/api/v1/dashboard/')
-        self.assertIn('revenue_this_month', admin_view.data)
+        self.assertIn('collected_this_month', admin_view.data)
 
     def test_dashboard_requires_login(self):
         self.assertEqual(self.client.get('/api/v1/dashboard/').status_code, 401)
@@ -535,6 +535,7 @@ class QueueTests(APITestCase):
         for appointment in appointments:
             self.client.post(f'/api/v1/appointments/{appointment.id}/check-in/')
 
+        self.client.force_authenticate(self.doctor_user)
         self.client.post(f'/api/v1/appointments/{appointments[0].id}/complete/')
 
         appointments[1].refresh_from_db()
@@ -572,7 +573,7 @@ class QueueTests(APITestCase):
 
     def test_cannot_start_before_check_in(self):
         appointment = self._appointment(self.patients[0], 9)
-        self.client.force_authenticate(self.reception)
+        self.client.force_authenticate(self.doctor_user)
         response = self.client.post(f'/api/v1/appointments/{appointment.id}/start/')
         self.assertEqual(response.status_code, 400)
 

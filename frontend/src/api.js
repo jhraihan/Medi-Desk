@@ -231,6 +231,12 @@ export async function fetchMyQueue() {
   return response.data;
 }
 
+// A patient's past visits, diagnoses, medicines and results. Admins and treating doctors.
+export async function fetchPatientHistory(patientId) {
+  const response = await API.get(`patients/${patientId}/history/`);
+  return response.data;
+}
+
 export async function fetchDoctorQueue(doctorId) {
   const response = await API.get(`queue/doctor/${doctorId}/`);
   return response.data;
@@ -414,6 +420,11 @@ export async function fetchHospitalDetails() {
 export async function saveHospitalDetails(details) {
   const response = await API.put("admin/hospital/", details);
   clinicDetails = null;
+  return response.data;
+}
+
+export async function fetchAdminReport(params) {
+  const response = await API.get("admin/reports/", { params });
   return response.data;
 }
 

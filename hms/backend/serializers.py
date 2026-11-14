@@ -1,5 +1,4 @@
 import secrets
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -43,7 +42,7 @@ from .models import (
 )
 from .permissions import role_of
 from .security import is_locked_out, lockout_message
-from .services import recompute_bill
+from .services import recompute_bill, usable_stock
 
 
 class LoginSerializer(TokenObtainPairSerializer):
@@ -171,6 +170,8 @@ class PatientSerializer(serializers.ModelSerializer):
 
 class AppointmentSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source='patient.__str__', read_only=True)
+    # Shown to the doctor while prescribing for this visit.
+    patient_allergies = serializers.CharField(source='patient.allergies', read_only=True)
     doctor_name = serializers.CharField(source='doctor.__str__', read_only=True)
     has_prescription = serializers.SerializerMethodField()
 
@@ -351,6 +352,8 @@ class DoctorScheduleSerializer(serializers.ModelSerializer):
         return attrs
 
 class PrescriptionMedicineSerializer(serializers.ModelSerializer):
+    # What the pharmacy can hand out now, so a short item is seen before dispensing.
+    in_stock = serializers.SerializerMethodField()
     medicine_name = serializers.CharField(source='medicine.name', read_only=True)
     medicine_unit = serializers.CharField(source='medicine.unit', read_only=True)
     generic_name = serializers.CharField(source='medicine.generic_name', read_only=True)
@@ -360,7 +363,10 @@ class PrescriptionMedicineSerializer(serializers.ModelSerializer):
     class Meta:
         model = PrescriptionMedicine
         fields = ['medicine', 'medicine_name', 'medicine_unit', 'generic_name', 'unit_price',
-                  'dosage', 'duration', 'frequency', 'instructions', 'quantity']
+                  'dosage', 'duration', 'frequency', 'instructions', 'quantity', 'in_stock']
+
+    def get_in_stock(self, item) -> int:
+        return usable_stock(item.medicine)
 
     def validate_quantity(self, quantity):
         if quantity < 1:
@@ -715,7 +721,7 @@ class MedicalDocumentSerializer(serializers.ModelSerializer):
         return uploaded
 
     def validate_document_date(self, when):
-        if when > date.today():
+        if when > timezone.localdate():
             raise serializers.ValidationError('A document cannot be dated in the future.')
         return when
 

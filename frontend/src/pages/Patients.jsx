@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { CalendarPlus, Pencil, UserPlus } from "lucide-react";
+import { CalendarPlus, History, Pencil, UserPlus } from "lucide-react";
 import { patientsApi } from "../api.js";
 import { useAuth } from "../auth-context.js";
 import { canWrite } from "../permissions.js";
@@ -20,6 +20,7 @@ import {
   Table,
 } from "../components/index.js";
 import PatientFormModal from "../components/PatientFormModal.jsx";
+import PatientHistoryModal from "../components/PatientHistoryModal.jsx";
 
 function Detail({ label, children }) {
   return (
@@ -35,6 +36,9 @@ export default function Patients() {
   const toast = useToast();
   const mayEdit = canWrite(user?.role, "patients");
   const mayBook = canWrite(user?.role, "appointments");
+  // Diagnoses and results are clinical: doctors and admins only, never the front desk.
+  const mayReadHistory = ["doctor", "admin"].includes(user?.role);
+  const [historyFor, setHistoryFor] = useState(null);
 
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState("");
@@ -139,6 +143,18 @@ export default function Patients() {
             <td className="px-4 py-3">{patient.blood_group ? <Badge tone="danger">{patient.blood_group}</Badge> : "—"}</td>
             <td className="px-4 py-3 whitespace-nowrap text-ink-700">{patient.phone}</td>
             <td className="px-4 py-3 text-right">
+              {mayReadHistory && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setHistoryFor(patient);
+                  }}
+                >
+                  <History size={13} /> History
+                </Button>
+              )}
               {mayEdit && (
                 <Button
                   size="sm"
@@ -229,6 +245,8 @@ export default function Patients() {
           </dl>
         )}
       </Modal>
+
+      {historyFor && <PatientHistoryModal patientId={historyFor.id} onClose={() => setHistoryFor(null)} />}
 
       {editing && (
         <PatientFormModal

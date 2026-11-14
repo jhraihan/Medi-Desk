@@ -6,7 +6,13 @@ from rest_framework_simplejwt.views import (
 )
 
 from .account_api import PasswordChangeView, PasswordResetConfirmView, PasswordResetRequestView
-from .admin_api import AdminHospitalView, AdminOverviewView, AdminUserViewSet, AuditLogViewSet
+from .admin_api import (
+    AdminHospitalView,
+    AdminOverviewView,
+    AdminReportView,
+    AdminUserViewSet,
+    AuditLogViewSet,
+)
 from .views import (
     AppointmentViewSet,
     BillViewSet,
@@ -72,6 +78,7 @@ urlpatterns = [
     path('dashboard/', DashboardView.as_view(), name='dashboard'),
     path('admin/overview/', AdminOverviewView.as_view(), name='admin-overview'),
     path('admin/hospital/', AdminHospitalView.as_view(), name='admin-hospital'),
+    path('admin/reports/', AdminReportView.as_view(), name='admin-reports'),
     path('queue/me/', MyQueueView.as_view(), name='my-queue'),
     path('queue/doctor/<int:doctor_id>/', DoctorQueueView.as_view(), name='doctor-queue'),
 

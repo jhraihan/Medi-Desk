@@ -73,11 +73,27 @@ class AppointmentAccess(RolePermission):
     delete_roles = (User.Role.ADMIN,)
 
 
-class VisitWorkflowAccess(RolePermission):
-    """Check-in, start and complete. Patients book and cancel, but never run the visit."""
+class CheckInAccess(RolePermission):
+    """The front desk checks a patient in on arrival."""
 
     read_roles = ()
-    write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST, User.Role.DOCTOR)
+    write_roles = (User.Role.ADMIN, User.Role.RECEPTIONIST)
+
+
+class ConsultationAccess(RolePermission):
+    """Starting and finishing a consultation is the doctor's call. The appointment
+    queryset already narrows a doctor to their own visits."""
+
+    read_roles = ()
+    write_roles = (User.Role.ADMIN, User.Role.DOCTOR)
+
+
+class PatientHistoryAccess(RolePermission):
+    """A patient's past visits, diagnoses, medicines and results. Clinical, so the front
+    desk does not see it; a doctor sees only patients they have treated."""
+
+    read_roles = (User.Role.ADMIN, User.Role.DOCTOR)
+    write_roles = ()
 
 
 class PrescriptionAccess(RolePermission):

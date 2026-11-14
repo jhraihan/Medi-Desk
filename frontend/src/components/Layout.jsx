@@ -3,7 +3,7 @@ import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Activity, KeyRound, LogOut, Menu } from "lucide-react";
 import { useAuth } from "../auth-context.js";
 import { fullName } from "../format.js";
-import { isActive, NAV } from "../navigation.js";
+import { isActive, navFor } from "../navigation.js";
 import ChangePasswordModal from "./ChangePasswordModal.jsx";
 import Modal from "./Modal.jsx";
 
@@ -26,10 +26,14 @@ export default function Layout() {
     navigate("/login", { replace: true });
   }
 
-  const links = NAV.filter((item) => !item.roles || item.roles.includes(user?.role));
-  const current = links.find((item) => isActive(pathname, item.to));
+  const links = navFor(user?.role);
+  // The most specific match, so /admin/reports lights Reports and not Admin as well.
+  const current = links
+    .filter((item) => isActive(pathname, item.to))
+    .sort((a, b) => b.to.length - a.to.length)[0];
+  const activeTo = current?.to;
   const tabs = links.slice(0, TAB_BAR_SIZE);
-  const moreIsActive = !tabs.some((item) => isActive(pathname, item.to));
+  const moreIsActive = !tabs.some((item) => item.to === activeTo);
   const initials = (user?.first_name?.[0] || user?.username?.[0] || "?").toUpperCase();
   const displayName = fullName(user);
 
@@ -61,7 +65,7 @@ export default function Layout() {
 
           <nav aria-label="Main" className="-mx-1 flex flex-1 flex-col gap-1 overflow-y-auto px-1">
             {links.map(({ to, label, icon: Icon }) => {
-              const active = isActive(pathname, to);
+              const active = to === activeTo;
               return (
                 <Link
                   key={to}
@@ -133,7 +137,7 @@ export default function Layout() {
         className="glass-strong fixed right-0 bottom-0 left-0 z-30 flex justify-around px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:hidden"
       >
         {tabs.map(({ to, label, icon: Icon }) => {
-          const active = isActive(pathname, to);
+          const active = to === activeTo;
           return (
             <Link
               key={to}
@@ -171,7 +175,7 @@ export default function Layout() {
 
         <div className="grid grid-cols-2 gap-2">
           {links.map(({ to, label, icon: Icon }) => {
-            const active = isActive(pathname, to);
+            const active = to === activeTo;
             return (
               <Link
                 key={to}

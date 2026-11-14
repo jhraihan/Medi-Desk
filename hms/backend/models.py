@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from uuid import uuid4
@@ -119,7 +119,7 @@ class Patient(models.Model):
     def age(self):
         if not self.date_of_birth:
             return None
-        today = date.today()
+        today = timezone.localdate()
         had_birthday = (today.month, today.day) >= (self.date_of_birth.month, self.date_of_birth.day)
         return today.year - self.date_of_birth.year - (0 if had_birthday else 1)
 
@@ -227,7 +227,7 @@ class MedicineStock(models.Model):
 
     @property
     def is_expired(self):
-        return self.expiry_date < date.today()
+        return self.expiry_date < timezone.localdate()
 
     @property
     def needs_reorder(self):
@@ -313,6 +313,7 @@ class Payment(models.Model):
         CARD = 'card', 'Card'
         INSURANCE = 'insurance', 'Insurance'
         TRANSFER = 'transfer', 'Transfer'
+        MOBILE = 'mobile', 'Mobile banking (bKash, Nagad)'
 
     bill = models.ForeignKey(Bill, on_delete=models.CASCADE, related_name='payments')
     amount = models.DecimalField(max_digits=10, decimal_places=2)
@@ -570,7 +571,7 @@ class Donor(models.Model):
             return False
         if not self.last_donation_date:
             return True
-        return date.today() >= self.available_from
+        return timezone.localdate() >= self.available_from
 
 
 class BloodRequest(models.Model):

@@ -1,6 +1,19 @@
 import { Fragment, useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { BellRing, ChevronDown, FilePlus2, FlaskConical, Pencil, Pill, Plus, Printer, Receipt, Trash2 } from "lucide-react";
+import {
+  AlertTriangle,
+  BellRing,
+  ChevronDown,
+  FilePlus2,
+  FlaskConical,
+  History,
+  Pencil,
+  Pill,
+  Plus,
+  Printer,
+  Receipt,
+  Trash2,
+} from "lucide-react";
 import {
   appointmentsApi,
   dispensePrescription,
@@ -14,6 +27,7 @@ import { formatDate, formatDateTime, money } from "../format.js";
 import { useDebounced, useLoader } from "../hooks.js";
 import { appointmentOption, searchLabTests, searchMedicines, searchPrescribableAppointments } from "../pickers.js";
 import { useToast } from "../toast-context.js";
+import PatientHistoryModal from "../components/PatientHistoryModal.jsx";
 import {
   Alert,
   Badge,
@@ -67,7 +81,8 @@ export default function Prescriptions() {
 
   // ?new=1&appointment=12 comes from the Prescribe button on an appointment.
   const [params, setParams] = useSearchParams();
-  const [status, setStatus] = useState(() => params.get("status") ?? "");
+  // The pharmacy opens on what is still to dispense.
+  const [status, setStatus] = useState(() => params.get("status") ?? (role === "pharmacist" ? "issued" : ""));
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState(null);
@@ -340,13 +355,27 @@ export default function Prescriptions() {
         onCancel={() => setDispensing(null)}
       >
         <ul className="mt-3 space-y-1.5 text-sm">
-          {(dispensing?.prescription_medicines ?? []).map((item, index) => (
-            <li key={index} className="flex justify-between gap-3 rounded-lg bg-brand-50/60 px-3 py-2">
-              <span className="font-medium text-ink-900">{item.medicine_name}</span>
-              <span className="text-ink-500">× {item.quantity}</span>
-            </li>
-          ))}
+          {(dispensing?.prescription_medicines ?? []).map((item, index) => {
+            const short = item.in_stock < item.quantity;
+            return (
+              <li
+                key={index}
+                className={`flex justify-between gap-3 rounded-lg px-3 py-2 ${short ? "bg-rose-50" : "bg-brand-50/60"}`}
+              >
+                <span className="font-medium text-ink-900">{item.medicine_name}</span>
+                <span className={short ? "font-medium text-rose-700" : "text-ink-500"}>
+                  × {item.quantity} · {item.in_stock} in stock
+                </span>
+              </li>
+            );
+          })}
         </ul>
+        {(dispensing?.prescription_medicines ?? []).some((item) => item.in_stock < item.quantity) && (
+          <p className="mt-3 text-sm text-rose-700">
+            Not enough unexpired stock for the items in red. Receive a batch under Stock first, or ask the
+            doctor for a substitute.
+          </p>
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -484,6 +513,9 @@ function PrescribeModal({ appointmentId, existing, onClose, onSaved }) {
   const reported = (existing?.test_orders ?? []).filter((order) => order.status === "completed");
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const chartPatient = existing?.patient_id ?? appointment?.patient;
+  const allergies = existing ? existing.patient_allergies : appointment?.allergies;
 
   // Coming from an appointment's Prescribe button, start with that visit chosen.
   useEffect(() => {
@@ -583,6 +615,23 @@ function PrescribeModal({ appointmentId, existing, onClose, onSaved }) {
             onChange={setAppointment}
             search={searchPrescribableAppointments}
           />
+        )}
+
+        {(chartPatient || allergies) && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {allergies ? (
+              <p className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-800">
+                <AlertTriangle size={14} /> <strong>Allergies:</strong> {allergies}
+              </p>
+            ) : (
+              <span className="text-xs text-ink-500">No known allergies recorded.</span>
+            )}
+            {chartPatient && (
+              <Button size="sm" variant="ghost" onClick={() => setShowHistory(true)}>
+                <History size={13} /> Past visits &amp; results
+              </Button>
+            )}
+          </div>
         )}
 
         <div className="grid gap-4 md:grid-cols-[2fr_1fr]">
@@ -722,6 +771,9 @@ function PrescribeModal({ appointmentId, existing, onClose, onSaved }) {
           </p>
         )}
       </div>
+      {showHistory && chartPatient && (
+        <PatientHistoryModal patientId={chartPatient} onClose={() => setShowHistory(false)} />
+      )}
     </Modal>
   );
 }

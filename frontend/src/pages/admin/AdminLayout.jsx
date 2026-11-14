@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router-dom";
 import {
+  BarChart3,
   Boxes,
   Building2,
   CalendarClock,
@@ -21,6 +22,7 @@ const TABS = [
   { to: "/admin/stock", label: "Pharmacy stock", icon: Boxes },
   { to: "/admin/lab-tests", label: "Lab tests", icon: FlaskConical },
   { to: "/admin/hospital", label: "Hospital details", icon: Hospital },
+  { to: "/admin/reports", label: "Reports", icon: BarChart3 },
   { to: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
 

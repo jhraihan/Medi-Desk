@@ -53,6 +53,8 @@ export function appointmentOption(appointment) {
     value: appointment.id,
     label: appointment.patient_name ?? `Patient #${appointment.patient}`,
     hint: `${formatDateTime(appointment.appointment_date)} · ${appointment.doctor_name ?? ""}`,
+    patient: appointment.patient,
+    allergies: appointment.patient_allergies ?? "",
   };
 }
 
