@@ -245,13 +245,20 @@ body::before {
 
 /* Printed prescriptions, invoices and lab reports: plain white A4, no app chrome. */
 @media print {
+  /* No page margin: the browser prints its own header and footer (date, page title,
+     the page's web address, page count) inside the margin, which does not belong on a
+     prescription or invoice. The sheet's padding gives the white border instead. */
   @page {
     size: A4;
-    margin: 12mm;
+    margin: 0;
   }
   html,
   body {
     background: #fff !important;
+    /* Keep the logo badge, coloured table headers and stamps even when the print
+       dialog's "Background graphics" box is unticked, which is the default. */
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   body::before,
   body::after {
@@ -264,10 +271,13 @@ body::before {
     box-shadow: none !important;
     border: 0 !important;
     margin: 0 !important;
-    padding: 0 !important;
+    padding: 12mm 14mm !important;
     max-width: none !important;
-    /* On screen the sheet is a full A4 page tall. On paper the @page margins already
-       take some of that height, so a full-height sheet would spill a blank second page. */
+    /* A long bill runs onto a second page: repeat the padding there too. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+    /* On screen the sheet is a full A4 page tall. On paper its padding already takes
+       some of that height, so a full-height sheet would spill a blank second page. */
     min-height: 0 !important;
   }
   .print-avoid-break {
