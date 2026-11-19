@@ -107,8 +107,12 @@ buttons for each role. That publishes an admin password, so only on demo deploym
 1. Browser print pages in the SPA: `/print/prescription/:id`, `/print/bill/:id`,
    `/print/lab/:id`, built on `components/PrintShell.jsx`. `?auto=1` opens the print dialog
    (`openPrintable` in `api.js`). Print CSS is the `@media print` block in `index.css`.
-   Do not give the sheet a full A4 `min-height` in print: the page margins then spill a
-   blank second page.
+   Do not give the sheet a full A4 `min-height` in print: it spills a blank second page.
+   Keep `@page { margin: 0 }` with the white border as the sheet's padding. A page margin
+   lets the browser print its own header and footer (date, page title, web address, page
+   count) onto the document. `print-color-adjust: exact` keeps the logo badge and coloured
+   table headers when "Background graphics" is unticked, which is the dialog's default.
+   Test prints with headers and footers on and backgrounds off, as a person prints.
 2. Server PDFs (reportlab) in `backend/pdf.py`, served at `prescriptions/{id}/pdf/`,
    `bills/{id}/pdf/` and `test-orders/{id}/pdf/`. Downloaded through `DownloadPdfButton`,
    because the request needs the JWT.
@@ -165,7 +169,7 @@ The public `GET /api/v1/clinic/` returns it for the print pages.
   - uploaded media is lost on redeploy.
 - Full guide: `docs/DEPLOYMENT.md`.
 
-## Status (2026-11-14)
+## Status (2026-11-15)
 
 - Merged into `main`:
   - PR #1: printing, lab tests, itemised billing, demo logins.
@@ -174,7 +178,6 @@ The public `GET /api/v1/clinic/` returns it for the print pages.
   - PR #4: full admin control (doctor add/edit, medicine edit/retire/delete, admin deletes,
     bill VAT/discount edits), `HospitalProfile` (migration 0015), the blank-second-page
     print fix, the `apiError` list fix, and this file.
-- PR #6 (branch `role-review`), awaiting merge: the per-role cleanup, doctor patient
-  history, pharmacy stock check, role dashboards, admin Reports, mobile banking payments,
-  clinic-date fixes.
+  - PR #6: the per-role cleanup, doctor patient history, pharmacy stock check, role
+    dashboards, admin Reports, mobile banking payments (migration 0016), clinic-date fixes.
 - Render deployment: not confirmed yet.
